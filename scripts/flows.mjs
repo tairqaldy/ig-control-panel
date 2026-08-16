@@ -60,7 +60,7 @@ try {
     ['automations-dryrun', async (p) => { await clickText(p, 'button', 'Dry run', { wait: 2000 }); }],
     ['import-pairing', async (p) => { await go(p, '/import'); await clickText(p, 'button', 'Get pairing code', { wait: 2000 }); await expectText(p, /RSF-/); }],
     ['settings-save', async (p) => { await go(p, '/settings'); await clickText(p, 'button', 'Save changes', { wait: 1500 }); }],
-    ['graph-tune', async (p) => { await go(p, '/graph', 3000); await clickText(p, 'button', 'Tune', { wait: 800 }); }],
+    ['graph-view', async (p) => { await go(p, '/graph', 3000); await clickText(p, 'button', 'View', { wait: 800 }); await expectText(p, /Everything|Map/); }],
     ['resurface-random', async (p) => { await go(p, '/resurface'); await clickText(p, 'button', 'Random save', { wait: 2000 }); }],
     ['palette', async (p) => { await go(p, '/'); await p.keyboard.down('Control'); await p.keyboard.press('k'); await p.keyboard.up('Control'); await sleep(600); await p.keyboard.type('analytics'); await sleep(600); await p.keyboard.press('Enter'); await sleep(1500); if (!/\/analytics/.test(p.url())) throw new Error('palette nav failed: ' + p.url()); }],
     ['billing', async (p) => { await go(p, '/billing'); await expectText(p, /Studio/); }],
