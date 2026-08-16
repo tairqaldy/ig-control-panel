@@ -14,11 +14,196 @@
  *   4) When it finishes, click "Download JSON" and upload the file at __RESURFLY_URL__ -> Import.
  *
  * Or drag the "Harvest saves" bookmarklet from the Import page to your bookmarks bar and click it on instagram.com.
+ *
+ * Maintainers: endpoint paths, headers and item normalization live in harvester/core.js (shared with the server's
+ * background harvester and the browser extension). The block between "@core-begin" and "@core-end" below is a generated
+ * copy — edit core.js, then run `node harvester/build.mjs` (`--check` verifies they are in sync).
  */
 (function () {
   'use strict';
-  const APP_ID = '936619743392459';
-  const VERSION = 1;
+
+  /* ---------------- shared core (generated from core.js) ---------------- */
+  /* @core-begin */
+  // ---- generated from harvester/core.js by `node harvester/build.mjs` — do not edit here, edit core.js ----
+  const IG_ORIGIN = 'https://www.instagram.com';
+  const IG_APP_ID = '936619743392459';
+  const HARVEST_FORMAT = 'resurface-harvest';
+  const HARVEST_VERSION = 1;
+  
+  /** Saved feed (all saved posts, newest first, ~20 per page). */
+  const SAVED_FEED_PATH = '/api/v1/feed/saved/posts/';
+  /** Collections list (paginated). */
+  const COLLECTIONS_LIST_PATH = '/api/v1/collections/list/';
+  /** Posts of one collection. */
+  const collectionFeedPath = (collectionId) => `/api/v1/feed/collection/${encodeURIComponent(String(collectionId))}/posts/`;
+  /** Basic user info (username for the account block). */
+  const userInfoPath = (userId) => `/api/v1/users/${encodeURIComponent(String(userId))}/info/`;
+  
+  const withMaxId = (path, maxId) => path + (maxId ? `?max_id=${encodeURIComponent(maxId)}` : '');
+  /** URL of one saved-feed page. `origin` = '' for same-origin (browser) or IG_ORIGIN for the server. */
+  const savedFeedUrl = (maxId = '', origin = '') => origin + withMaxId(SAVED_FEED_PATH, maxId);
+  const collectionFeedUrl = (collectionId, maxId = '', origin = '') => origin + withMaxId(collectionFeedPath(collectionId), maxId);
+  const collectionsListUrl = (maxId = '', origin = '') => origin + COLLECTIONS_LIST_PATH + '?collection_types=' + encodeURIComponent('["ALL_MEDIA_AUTO_COLLECTION","MEDIA"]') + '&include_public_only=0&get_cover_media_lists=false&max_id=' + encodeURIComponent(maxId || '');
+  const userInfoUrl = (userId, origin = '') => origin + userInfoPath(userId);
+  
+  /**
+   * Request headers for Instagram's web API.
+   * Browser: call with no arguments (cookies travel via credentials:'include'; forbidden headers are simply not set).
+   * Server: pass the stored session — `sessionid`, `csrftoken`, `dsUserId`, `ua`, and `username` (for the referer).
+   */
+  function buildHeaders(opts = {}) {
+    const h = { 'x-ig-app-id': IG_APP_ID, 'x-requested-with': 'XMLHttpRequest', accept: '*/*' };
+    if (opts.csrftoken) h['x-csrftoken'] = opts.csrftoken;
+    if (opts.sessionid) {
+      h.cookie = `sessionid=${opts.sessionid}; csrftoken=${opts.csrftoken || ''}; ds_user_id=${opts.dsUserId || ''}`;
+      h['sec-fetch-site'] = 'same-origin';
+      h['sec-fetch-mode'] = 'cors';
+      h['sec-fetch-dest'] = 'empty';
+      h['accept-language'] = 'en-US,en;q=0.9';
+    }
+    if (opts.ua) h['user-agent'] = opts.ua;
+    if (opts.referer) h.referer = opts.referer;
+    else if (opts.username) h.referer = `${IG_ORIGIN}/${opts.username}/saved/`;
+    else if (opts.sessionid) h.referer = `${IG_ORIGIN}/`;
+    return h;
+  }
+  
+  /** Media objects of a feed page (the feed wraps them as {media:{...}}; collections return them bare). Items without a code are dropped. */
+  function pageItems(data) {
+    const list = (data && Array.isArray(data.items)) ? data.items : [];
+    const out = [];
+    for (const it of list) {
+      const m = it && (it.media || it);
+      if (m && m.code) out.push(m);
+    }
+    return out;
+  }
+  
+  /** Pagination of a feed page: `more` only when Instagram says so AND handed us a cursor AND the page was not empty. */
+  function pageCursor(data) {
+    const list = (data && Array.isArray(data.items)) ? data.items : [];
+    const more = !!(data && data.more_available && data.next_max_id && list.length > 0);
+    return { more, nextMaxId: more ? String(data.next_max_id) : '' };
+  }
+  
+  /** One page of the collections list → { total (all saved media), collections:[{id,name,count}], nextMaxId }. */
+  function parseCollectionsPage(cl) {
+    const items = (cl && Array.isArray(cl.items)) ? cl.items : [];
+    const auto = items.find((c) => c.collection_type === 'ALL_MEDIA_AUTO_COLLECTION');
+    const total = (cl && cl.all_saved_media_count) || (auto && auto.collection_media_count) || null;
+    const collections = items.filter((c) => c.collection_type === 'MEDIA').map((c) => ({ id: String(c.collection_id), name: c.collection_name, count: c.collection_media_count || 0 }));
+    const nextMaxId = cl && cl.more_available && cl.next_max_id ? String(cl.next_max_id) : '';
+    return { total, collections, nextMaxId };
+  }
+  
+  /** Prefer the largest image <= 1080 wide, else the largest available. */
+  function pickImg(iv2) {
+    const c = iv2 && iv2.candidates;
+    if (!c || !c.length) return null;
+    const sorted = c.slice().sort((a, b) => (b.width || 0) - (a.width || 0));
+    const good = sorted.find((x) => (x.width || 0) <= 1080) || sorted[0];
+    return good ? { url: good.url, width: good.width, height: good.height } : null;
+  }
+  /** Smallest video that is still >= 480px wide (cheap to fetch, fine for frames/transcript), else the smallest. */
+  function pickVideo(vv) {
+    if (!vv || !vv.length) return null;
+    const sorted = vv.slice().sort((a, b) => (a.width || 0) - (b.width || 0));
+    const good = sorted.find((x) => (x.width || 0) >= 480) || sorted[sorted.length - 1];
+    return good ? { url: good.url, width: good.width, height: good.height } : null;
+  }
+  function musicOf(m) {
+    const cm = m.clips_metadata || {};
+    const mi = cm.music_info && cm.music_info.music_asset_info;
+    if (mi && (mi.title || mi.display_artist)) return { title: mi.title || '', artist: mi.display_artist || '' };
+    return null;
+  }
+  function originalAudio(m) {
+    const cm = m.clips_metadata || {};
+    const o = cm.original_sound_info;
+    return o ? (o.original_audio_title || 'Original audio') : null;
+  }
+  
+  /**
+   * Raw Instagram media (or a {media} wrapper) → HarvestItem (server/src/types.ts). Throws on a shape it cannot read.
+   * ctx.collections: names of the collections this item belongs to (optional).
+   */
+  function normalizeItem(node, ctx) {
+    const m = node && node.media ? node.media : node;
+    if (!m || typeof m !== 'object') throw new Error('not a media object');
+    const collections = ctx && Array.isArray(ctx.collections) ? ctx.collections : null;
+    const code = m.code;
+    const isClip = m.product_type === 'clips' || m.product_type === 'igtv';
+    const car = Array.isArray(m.carousel_media) ? m.carousel_media.map((c) => ({ pk: String(c.pk || c.id || ''), media_type: c.media_type, thumb: pickImg(c.image_versions2), video: pickVideo(c.video_versions), alt_text: c.accessibility_caption || null })) : null;
+    return {
+      pk: String(m.pk || m.id || ''),
+      code,
+      url: code ? `${IG_ORIGIN}/${isClip ? 'reel' : 'p'}/${code}/` : undefined,
+      taken_at: m.taken_at || null,
+      media_type: m.media_type,
+      product_type: m.product_type || null,
+      caption: (m.caption && m.caption.text) || null,
+      alt_text: m.accessibility_caption || null,
+      user: m.user ? { pk: String(m.user.pk || m.user.id || ''), username: m.user.username, full_name: m.user.full_name, is_verified: !!m.user.is_verified, profile_pic_url: m.user.profile_pic_url } : null,
+      like_count: typeof m.like_count === 'number' ? m.like_count : null,
+      comment_count: typeof m.comment_count === 'number' ? m.comment_count : null,
+      play_count: typeof m.play_count === 'number' ? m.play_count : (typeof m.ig_play_count === 'number' ? m.ig_play_count : null),
+      view_count: typeof m.view_count === 'number' ? m.view_count : null,
+      video_duration: typeof m.video_duration === 'number' ? m.video_duration : null,
+      location: m.location && m.location.name ? { name: m.location.name } : null,
+      music: musicOf(m),
+      original_audio: originalAudio(m),
+      thumb: pickImg(m.image_versions2) || (car && car.find((c) => c.thumb) ? car.find((c) => c.thumb).thumb : null),
+      video: pickVideo(m.video_versions),
+      carousel: car,
+      collections: collections && collections.length ? collections : undefined,
+      usertags: m.usertags && m.usertags.in ? m.usertags.in.map((u) => u.user && u.user.username).filter(Boolean) : undefined,
+      coauthors: Array.isArray(m.coauthor_producers) ? m.coauthor_producers.map((u) => u.username).filter(Boolean) : undefined,
+      is_paid_partnership: !!m.is_paid_partnership,
+      has_audio: typeof m.has_audio === 'boolean' ? m.has_audio : undefined,
+    };
+  }
+  
+  /** The file/body shape the server's harvest importers accept. */
+  function buildHarvestPayload({ account = null, collections = [], items = [] } = {}) {
+    return { format: HARVEST_FORMAT, version: HARVEST_VERSION, exported_at: Math.floor(Date.now() / 1000), account, collections, items };
+  }
+  
+  /** Random pause between pages (ms): 1.5–2.5 s by default — polite to Instagram, fast enough for a few hundred saves. */
+  function pageDelayMs(min = 1500, spread = 1000) {
+    return min + Math.random() * spread;
+  }
+  
+  /** Heuristic: did Instagram answer with a login page / HTML instead of JSON? (session expired, logged out) */
+  function looksLikeLoginPage(status, contentType, text) {
+    if (status === 401 || status === 403) return true;
+    if (contentType && /text\/html/i.test(contentType)) return true;
+    if (typeof text === 'string' && /^\s*</.test(text)) return true;
+    return false;
+  }
+  /** Same check for a fetch Response (+ its body text): also catches the redirect to /accounts/login/. */
+  function looksLikeLoggedOut(res, text) {
+    if (!res) return false;
+    const url = typeof res.url === 'string' ? res.url : '';
+    if (/\/accounts\/login\/?/.test(url) || (res.redirected && /\/accounts\//.test(url))) return true;
+    const ct = res.headers && typeof res.headers.get === 'function' ? res.headers.get('content-type') : null;
+    return looksLikeLoginPage(res.status, ct, text);
+  }
+  
+  /**
+   * One saved-feed page → { items: HarvestItem[] (already normalized, unreadable ones skipped), moreAvailable, nextMaxId, rawCount }.
+   * Convenience for the extension/server loops.
+   */
+  function parseFeedPage(data, ctx) {
+    const raw = pageItems(data);
+    const items = [];
+    for (const m of raw) {
+      try { items.push(normalizeItem(m, ctx || null)); } catch (e) { /* skip unreadable */ }
+    }
+    const cur = pageCursor(data);
+    return { items, moreAvailable: cur.more, nextMaxId: cur.nextMaxId, rawCount: raw.length };
+  }
+/* @core-end */
+
   const RESURFLY_URL = '__RESURFLY_URL__';
   // Optional: a private 24h upload token embedded by your dashboard's Import page (enables "Send to Resurfly").
   const RESURFLY_TOKEN = '__RESURFLY_TOKEN__';
@@ -82,7 +267,7 @@
   let stopFlag = false;
   // Sleep in small slices so a Stop click takes effect within ~0.5s even during long back-offs.
   const sleep = async (ms) => { const end = Date.now() + ms; while (Date.now() < end && !stopFlag) await new Promise((r) => setTimeout(r, Math.min(500, end - Date.now()))); };
-  const headers = { 'x-ig-app-id': APP_ID, 'x-requested-with': 'XMLHttpRequest', accept: '*/*' };
+  const headers = buildHeaders();
   async function api(path, attempt = 0) {
     if (stopFlag) throw new Error('Stopped.');
     let res;
@@ -108,62 +293,6 @@
     if (!res.ok) throw new Error(`HTTP ${res.status} for ${path}`);
     const text = await res.text();
     try { return JSON.parse(text); } catch (e) { throw new Error('Unexpected non-JSON response (are you logged in?)'); }
-  }
-
-  /* ---------------- normalization ---------------- */
-  const pickImg = (iv2) => {
-    const c = iv2 && iv2.candidates;
-    if (!c || !c.length) return null;
-    // prefer the largest <= 1080 wide, else the largest available
-    const sorted = c.slice().sort((a, b) => (b.width || 0) - (a.width || 0));
-    const good = sorted.find((x) => (x.width || 0) <= 1080) || sorted[0];
-    return good ? { url: good.url, width: good.width, height: good.height } : null;
-  };
-  const pickVideo = (vv) => {
-    if (!vv || !vv.length) return null;
-    // smallest that is still >= 480px wide (cheap to fetch, fine for frames/transcript), else the smallest
-    const sorted = vv.slice().sort((a, b) => (a.width || 0) - (b.width || 0));
-    const good = sorted.find((x) => (x.width || 0) >= 480) || sorted[sorted.length - 1];
-    return good ? { url: good.url, width: good.width, height: good.height } : null;
-  };
-  const musicOf = (m) => {
-    const cm = m.clips_metadata || {};
-    const mi = cm.music_info && cm.music_info.music_asset_info;
-    if (mi && (mi.title || mi.display_artist)) return { title: mi.title || '', artist: mi.display_artist || '' };
-    return null;
-  };
-  const originalAudio = (m) => { const cm = m.clips_metadata || {}; const o = cm.original_sound_info; return o ? (o.original_audio_title || 'Original audio') : null; };
-  function normalize(m, collections) {
-    const code = m.code;
-    const isClip = m.product_type === 'clips' || m.product_type === 'igtv';
-    const car = Array.isArray(m.carousel_media) ? m.carousel_media.map((c) => ({ pk: String(c.pk || c.id || ''), media_type: c.media_type, thumb: pickImg(c.image_versions2), video: pickVideo(c.video_versions), alt_text: c.accessibility_caption || null })) : null;
-    return {
-      pk: String(m.pk || m.id || ''),
-      code,
-      url: code ? `https://www.instagram.com/${isClip ? 'reel' : 'p'}/${code}/` : undefined,
-      taken_at: m.taken_at || null,
-      media_type: m.media_type,
-      product_type: m.product_type || null,
-      caption: (m.caption && m.caption.text) || null,
-      alt_text: m.accessibility_caption || null,
-      user: m.user ? { pk: String(m.user.pk || m.user.id || ''), username: m.user.username, full_name: m.user.full_name, is_verified: !!m.user.is_verified, profile_pic_url: m.user.profile_pic_url } : null,
-      like_count: typeof m.like_count === 'number' ? m.like_count : null,
-      comment_count: typeof m.comment_count === 'number' ? m.comment_count : null,
-      play_count: typeof m.play_count === 'number' ? m.play_count : (typeof m.ig_play_count === 'number' ? m.ig_play_count : null),
-      view_count: typeof m.view_count === 'number' ? m.view_count : null,
-      video_duration: typeof m.video_duration === 'number' ? m.video_duration : null,
-      location: m.location && m.location.name ? { name: m.location.name } : null,
-      music: musicOf(m),
-      original_audio: originalAudio(m),
-      thumb: pickImg(m.image_versions2) || (car && car.find((c) => c.thumb) ? car.find((c) => c.thumb).thumb : null),
-      video: pickVideo(m.video_versions),
-      carousel: car,
-      collections: collections && collections.length ? collections : undefined,
-      usertags: m.usertags && m.usertags.in ? m.usertags.in.map((u) => u.user && u.user.username).filter(Boolean) : undefined,
-      coauthors: Array.isArray(m.coauthor_producers) ? m.coauthor_producers.map((u) => u.username).filter(Boolean) : undefined,
-      is_paid_partnership: !!m.is_paid_partnership,
-      has_audio: typeof m.has_audio === 'boolean' ? m.has_audio : undefined,
-    };
   }
 
   /* ---------------- main ---------------- */
@@ -194,7 +323,7 @@
       if (!account) {
         try {
           const uid = (document.cookie.match(/ds_user_id=(\d+)/) || [])[1];
-          if (uid) { const u = await api(`/api/v1/users/${uid}/info/`); account = { ds_user_id: uid, username: u && u.user && u.user.username }; }
+          if (uid) { const u = await api(userInfoUrl(uid)); account = { ds_user_id: uid, username: u && u.user && u.user.username }; }
         } catch (e) { /* ignore */ }
       }
       if (total === null) {
@@ -202,10 +331,11 @@
           // collections list is paginated too (users with many collections)
           let cMax = ''; let guard = 0; collectionsInfo = [];
           do {
-            const cl = await api('/api/v1/collections/list/?collection_types=' + encodeURIComponent('["ALL_MEDIA_AUTO_COLLECTION","MEDIA"]') + '&include_public_only=0&get_cover_media_lists=false&max_id=' + encodeURIComponent(cMax));
-            if (total === null) total = cl.all_saved_media_count || (cl.items && cl.items.find((c) => c.collection_type === 'ALL_MEDIA_AUTO_COLLECTION') || {}).collection_media_count || null;
-            for (const c of (cl.items || [])) if (c.collection_type === 'MEDIA') collectionsInfo.push({ id: String(c.collection_id), name: c.collection_name, count: c.collection_media_count || 0 });
-            cMax = cl.more_available && cl.next_max_id ? String(cl.next_max_id) : '';
+            const cl = await api(collectionsListUrl(cMax));
+            const page = parseCollectionsPage(cl);
+            if (total === null) total = page.total;
+            collectionsInfo.push(...page.collections);
+            cMax = page.nextMaxId;
           } while (cMax && ++guard < 50 && !stopFlag);
           if (total === null) total = 0;
           cCols.textContent = collectionsInfo.length ? `${collectionsInfo.length} collections` : '';
@@ -216,21 +346,20 @@
       let more = !feedDone;
       if (items.length && more) setStatus(`Resuming from ${items.length} saves...`);
       while (more && !stopFlag && items.length < limit) {
-        const data = await api('/api/v1/feed/saved/posts/' + (maxId ? `?max_id=${encodeURIComponent(maxId)}` : ''));
+        const data = await api(savedFeedUrl(maxId));
         pages++;
-        const list = data.items || [];
-        for (const it of list) {
-          const m = it.media || it;
-          if (!m || !m.code) continue;
+        const list = pageItems(data);
+        for (const m of list) {
           if (byCode.has(m.code)) continue;
           let n;
-          try { n = normalize(m, null); } catch (e) { console.warn('[resurfly] skipping item with unexpected shape', m.code, e); continue; }
+          try { n = normalizeItem(m, null); } catch (e) { console.warn('[resurfly] skipping item with unexpected shape', m.code, e); continue; }
           byCode.set(m.code, n);
           items.push(n);
           if (items.length >= limit) break;
         }
-        more = !!data.more_available && !!data.next_max_id && list.length > 0;
-        maxId = data.next_max_id || '';
+        const cur = pageCursor(data);
+        more = cur.more;
+        maxId = cur.nextMaxId;
         if (!more) feedDone = true;
         cItems.textContent = `${items.length} saves`; cPages.textContent = `${pages} pages`;
         const pct = total ? Math.min(100, Math.round((items.length / Math.min(total, limit)) * 100)) : Math.min(95, pages * 2);
@@ -248,17 +377,17 @@
           while (cMore && !stopFlag && guard++ < 400) {
             setStatus(`Mapping collection "${col.name}"...`);
             let data;
-            try { data = await api(`/api/v1/feed/collection/${col.id}/posts/` + (cMax ? `?max_id=${encodeURIComponent(cMax)}` : '')); }
+            try { data = await api(collectionFeedUrl(col.id, cMax)); }
             catch (e) { console.warn('[resurfly] collection failed', col.name, e); break; }
             pages++;
-            for (const it of (data.items || [])) {
-              const m = it.media || it; if (!m || !m.code) continue;
+            for (const m of pageItems(data)) {
               let n = byCode.get(m.code);
-              if (!n) { try { n = normalize(m, null); } catch (e) { continue; } byCode.set(m.code, n); items.push(n); }
+              if (!n) { try { n = normalizeItem(m, null); } catch (e) { continue; } byCode.set(m.code, n); items.push(n); }
               n.collections = Array.from(new Set([...(n.collections || []), col.name]));
             }
-            cMore = !!data.more_available && !!data.next_max_id && (data.items || []).length > 0;
-            cMax = data.next_max_id || '';
+            const ccur = pageCursor(data);
+            cMore = ccur.more;
+            cMax = ccur.nextMaxId;
             cItems.textContent = `${items.length} saves`; cPages.textContent = `${pages} pages`;
             if (cMore) await sleep(900 + Math.random() * 900);
           }
@@ -307,7 +436,7 @@
   }
 
   function buildPayload() {
-    return { format: 'resurface-harvest', version: VERSION, exported_at: Math.floor(Date.now() / 1000), account, collections: collectionsInfo, items };
+    return buildHarvestPayload({ account, collections: collectionsInfo, items });
   }
 
   function download() {

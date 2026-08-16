@@ -101,6 +101,7 @@ export const config = {
   autoStartWorker: bool(process.env.AUTO_START_WORKER, true),
 
   // Meta / Instagram automations (can also be set from the Settings UI; env wins — for the owner tenant only)
+  metaAppId: process.env.META_APP_ID || '',
   metaAppSecret: process.env.META_APP_SECRET || '',
   metaVerifyToken: process.env.META_VERIFY_TOKEN || '',
   igAccessToken: process.env.IG_ACCESS_TOKEN || '',
@@ -111,6 +112,7 @@ export const config = {
   hosted: bool(process.env.HOSTED, false),
   signupsEnabled: bool(process.env.SIGNUPS_ENABLED, bool(process.env.HOSTED, false)),
   trialDays: Math.max(0, num(process.env.TRIAL_DAYS, 3)),
+  ownerPlan: (['owner', 'studio', 'pro', 'trial', 'free'].includes(process.env.OWNER_PLAN || '') ? process.env.OWNER_PLAN : 'owner') as 'owner' | 'studio' | 'pro' | 'trial' | 'free',
 
   // Paddle billing (hosted mode only)
   paddle: {

@@ -1,140 +1,112 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { motion } from 'motion/react';
-import { toast } from 'sonner';
-import { Upload, Copy, Bookmark, FileJson, FileArchive, Link2, CheckCircle2, AlertCircle, Loader2, Terminal, ArrowRight } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { AnimatePresence, motion } from 'motion/react';
+import { CheckCircle2, AlertCircle, Terminal, FileArchive, ChevronDown, SlidersHorizontal } from 'lucide-react';
 import { api } from '../lib/api';
-import { PageHeader, Tabs, Field, Toggle } from '../components/ui';
+import type { ScopeReport } from '../lib/types';
+import { PageHeader, Toggle } from '../components/ui';
 import { AnalysisPlan } from '../components/AnalysisPlan';
 import { useWorkerStatus } from '../components/Shell';
-import { useQuota } from '../lib/store';
-import { cn, copyText, fmtAgo } from '../lib/utils';
+import { ChromeGlyph } from '../components/instagram/icons';
+import { CompanionCard, ScriptSteps, AdvancedImport } from '../components/import';
+import { cn, fmtAgo } from '../lib/utils';
 
-type Tab = 'harvester' | 'export' | 'urls';
-
-function DropZone({ accept, onFile, label, hint, busy }: { accept: string; onFile: (f: File) => void; label: string; hint: string; busy?: boolean }) {
-  const [over, setOver] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+/** Numbered section with an optional disclosure (2 and 3 are collapsed by default). */
+function Section({ n, title, blurb, icon, badge, open, onToggle, children }: { n: number; title: string; blurb: string; icon: ReactNode; badge?: ReactNode; open: boolean; onToggle?: () => void; children: ReactNode }) {
+  const collapsible = !!onToggle;
   return (
-    <div
-      onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
-      onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files?.[0]; if (f) onFile(f); }}
-      onClick={() => inputRef.current?.click()}
-      className={cn('cursor-pointer rounded-2xl border-2 border-dashed p-8 text-center transition-colors', over ? 'border-accent bg-accent-soft/40' : 'border-line hover:border-line-2 bg-surface')}
-    >
-      <input ref={inputRef} type="file" accept={accept} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ''; }} />
-      {busy ? <Loader2 className="mx-auto mb-2 animate-spin text-accent" /> : <Upload className="mx-auto mb-2 text-muted" />}
-      <div className="text-[14px] font-medium">{busy ? 'Uploading & importing…' : label}</div>
-      <div className="text-[12px] text-muted mt-1">{hint}</div>
+    <section className="mb-5">
+      <button type="button" onClick={onToggle} disabled={!collapsible} className={cn('w-full flex items-center gap-3 text-left rounded-xl px-1 py-2 group outline-none focus-visible:ring-2 focus-visible:ring-accent/30', collapsible && 'hover:bg-surface-2/60 transition-colors')} aria-expanded={open}>
+        <span className={cn('h-7 w-7 shrink-0 grid place-items-center rounded-full border font-mono text-[11.5px]', n === 1 ? 'border-accent bg-accent text-accent-ink' : 'border-line-2 text-muted')}>{n}</span>
+        <span className="text-muted hidden sm:inline">{icon}</span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-2 flex-wrap"><span className="text-[15px] font-semibold">{title}</span>{badge}</span>
+          <span className="block text-[12.5px] text-muted">{blurb}</span>
+        </span>
+        {collapsible && <ChevronDown size={16} className={cn('text-muted transition-transform shrink-0', open && 'rotate-180')} />}
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div key="body" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.22, ease: [0.2, 0.7, 0.2, 1] }} className="overflow-hidden">
+            <div className="pt-2 pl-0 sm:pl-10">{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </section>
+  );
+}
+
+/**
+ * One-line analysis status (dot · state · counts · progress) with the full AnalysisPlan behind "Fine-tune".
+ * Opens itself when the worker paused for a reason the user has to act on (no OpenAI credits, budget cap).
+ */
+function AnalysisStrip() {
+  const worker = useWorkerStatus();
+  const scope = useQuery({ queryKey: ['scope'], queryFn: () => api.get<ScopeReport>('/api/scope'), refetchInterval: 15000 });
+  const [open, setOpen] = useState(false);
+  const w = worker.data; const r = scope.data;
+  const needsAttention = !!w?.paused && !!w.pauseReason && w.pauseReason !== 'manual';
+  useEffect(() => { if (needsAttention) setOpen(true); }, [needsAttention]);
+  const active = w ? w.queued + w.running : 0;
+  const total = w?.total || 0;
+  const pct = total ? Math.round(((w?.analyzed ?? 0) / total) * 100) : 0;
+  const state = !w ? 'Loading…' : w.paused ? (w.pauseReason === 'quota' ? 'Paused — no OpenAI credits' : w.pauseReason === 'budget' ? 'Paused — budget cap reached' : 'Paused') : active > 0 ? `Analyzing · ${w.running} running, ${w.queued} queued` : r && r.counts.eligiblePending > 0 ? `${r.counts.eligiblePending.toLocaleString()} saves waiting for analysis` : 'Analysis up to date';
+  return (
+    <div className="mb-6">
+      <div className={cn('card-flat px-4 py-3', needsAttention && 'border-warn/50')}>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className={cn('h-2 w-2 rounded-full shrink-0', active > 0 && !w?.paused ? 'bg-accent pulse-dot' : w?.paused ? 'bg-warn' : 'bg-line-2')} />
+            <div className="min-w-0">
+              <div className="text-[13.5px] font-medium truncate">{state}</div>
+              <div className="text-[11.5px] text-muted truncate">
+                {w ? <>{w.analyzed.toLocaleString()} of {total.toLocaleString()} analyzed{r ? ` · ${r.counts.eligiblePending.toLocaleString()} eligible · ${r.counts.outOfScope.toLocaleString()} outside plan` : ''}{w.failed ? ` · ${w.failed} failed` : ''}</> : ' '}
+              </div>
+            </div>
+          </div>
+          <div className="hidden sm:block flex-1 min-w-[120px] max-w-[260px]">
+            <div className="h-1 rounded-full bg-line overflow-hidden"><motion.div className="h-full bg-accent" initial={false} animate={{ width: `${pct}%` }} transition={{ type: 'spring', stiffness: 80, damping: 20 }} /></div>
+          </div>
+          <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="btn btn-sm ml-auto"><SlidersHorizontal size={13} /> Fine-tune <ChevronDown size={12} className={cn('transition-transform', open && 'rotate-180')} /></button>
+        </div>
+        {w && !w.openaiConfigured && <div className="mt-2 text-[12.5px] text-warn flex items-center gap-1.5"><AlertCircle size={13} className="shrink-0" /> No OpenAI key yet — imports still work, but analysis waits until you add one in Settings.</div>}
+      </div>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div key="plan" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.22, ease: [0.2, 0.7, 0.2, 1] }} className="overflow-hidden">
+            <div className="pt-3"><AnalysisPlan /></div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
 export default function Import() {
-  const qc = useQueryClient();
-  const [tab, setTab] = useState<Tab>('harvester');
   const [autoAnalyze, setAutoAnalyze] = useState(true);
-  const [includeLiked, setIncludeLiked] = useState(false);
-  const [urls, setUrls] = useState('');
-  const [script, setScript] = useState<string>('');
-  const bookmarkletRef = useRef<HTMLAnchorElement>(null);
-  const worker = useWorkerStatus();
-  const { openUpgrade, refreshPlan } = useQuota();
+  const [scriptOpen, setScriptOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const history = useQuery({ queryKey: ['imports'], queryFn: () => api.get<{ imports: any[] }>('/api/import/history') });
-  const token = useQuery({ queryKey: ['upload-token'], queryFn: () => api.post<{ token: string; expiresAt: number }>('/api/import/token'), staleTime: 60 * 60_000 });
-  useEffect(() => { fetch('/harvester.js').then((r) => r.text()).then(setScript).catch(() => {}); }, []);
-  // The script we hand out embeds a private 24h upload token so the harvester can "Send to Resurfly" directly.
-  const personalScript = script ? script.replace(/__RESURFLY_TOKEN__/g, token.data?.token || '__RESURFLY_TOKEN__') : '';
-  const bookmarklet = personalScript ? `javascript:${encodeURIComponent(personalScript.replace(/^\/\*[\s\S]*?\*\/\s*/, ''))}` : '';
-  // React refuses to render javascript: URLs in href — set it through the DOM so the drag-to-bookmarks-bar gesture keeps the real code.
-  useEffect(() => { if (bookmarkletRef.current) bookmarkletRef.current.setAttribute('href', bookmarklet || '#'); }, [bookmarklet]);
 
-  const done = (r: any) => {
-    toast.success(`Imported ${r.total}: ${r.created} new, ${r.updated} updated${r.queued ? ` · ${r.queued} queued for analysis` : ''}`);
-    // Hosted: the server queues only what fits the plan allowance and reports the rest as leftOut.
-    if (r.leftOut > 0) toast(`${Number(r.leftOut).toLocaleString()} saves are waiting for a bigger plan`, { action: { label: 'Upgrade', onClick: () => openUpgrade({ reason: `Analyze the ${Number(r.leftOut).toLocaleString()} saves that didn't fit your allowance` }) }, duration: 8000 });
-    qc.invalidateQueries({ queryKey: ['items'] }); qc.invalidateQueries({ queryKey: ['stats'] }); qc.invalidateQueries({ queryKey: ['jobs-status'] }); qc.invalidateQueries({ queryKey: ['imports'] }); qc.invalidateQueries({ queryKey: ['facets'] }); void refreshPlan();
-  };
-  const upHarvest = useMutation({ mutationFn: (f: File) => { const fd = new FormData(); fd.append('file', f); fd.append('auto_analyze', autoAnalyze ? '1' : '0'); return api.post<any>('/api/import/harvest', fd); }, onSuccess: done, onError: (e: any) => toast.error(e.message) });
-  const upExport = useMutation({ mutationFn: (f: File) => { const fd = new FormData(); fd.append('file', f); fd.append('auto_analyze', autoAnalyze ? '1' : '0'); fd.append('include_liked', includeLiked ? '1' : '0'); return api.post<any>('/api/import/instagram-export', fd); }, onSuccess: done, onError: (e: any) => toast.error(e.message) });
-  const upUrls = useMutation({ mutationFn: () => api.post<any>('/api/import/urls', { urls, auto_analyze: autoAnalyze }), onSuccess: (r) => { done(r); setUrls(''); }, onError: (e: any) => toast.error(e.message) });
-  const copyScript = useCallback(() => { copyText(personalScript); toast.success('Harvester script copied — paste it into the DevTools console on instagram.com'); }, [personalScript]);
-
-  const w = worker.data;
   return (
     <div>
-      <PageHeader eyebrow="Import" title={<>Bring your saves <em className="text-accent not-italic">home</em></>} subtitle="Three ways in. The harvester is the richest (captions, stats, media for transcripts and frames). Re-running any import is safe: existing saves are updated, never duplicated." />
+      <PageHeader eyebrow="Import" title={<>Bring your saves <em className="text-accent not-italic">home</em></>} subtitle="Pair the Companion once and new saves arrive on their own. Re-running any import is safe: existing saves are updated, never duplicated."
+        actions={<Toggle checked={autoAnalyze} onChange={setAutoAnalyze} label="Analyze automatically after import" />} />
 
-      {/* Analysis plan: scope, cost, worker controls */}
-      <div className="mb-8">
-        <AnalysisPlan />
-        {w && !w.openaiConfigured && <div className="mt-3 text-[12.5px] text-warn flex items-center gap-1.5"><AlertCircle size={13} /> OpenAI key missing — imports still work (and media gets fetched), but analysis waits until you add a key in Settings.</div>}
-      </div>
+      {/* Analysis: one-line status, full plan under Fine-tune */}
+      <AnalysisStrip />
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <Tabs value={tab} onChange={setTab} tabs={[{ id: 'harvester', label: <span className="inline-flex items-center gap-1.5"><Terminal size={13} /> Harvester (best)</span> }, { id: 'export', label: <span className="inline-flex items-center gap-1.5"><FileArchive size={13} /> Instagram data export</span> }, { id: 'urls', label: <span className="inline-flex items-center gap-1.5"><Link2 size={13} /> Paste URLs</span> }]} />
-        <Toggle checked={autoAnalyze} onChange={setAutoAnalyze} label="Analyze automatically after import" />
-      </div>
+      <Section n={1} title="Companion" blurb="Chrome extension. Pair once; new saves sync every 6 hours." icon={<ChromeGlyph size={16} />} badge={<span className="chip chip-active !text-[11px]">recommended</span>} open>
+        <CompanionCard />
+      </Section>
 
-      {tab === 'harvester' && (
-        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="grid lg:grid-cols-[1.1fr_1fr] gap-4">
-          <div className="card p-6">
-            <div className="eyebrow mb-3">How it works</div>
-            <ol className="space-y-4 text-[13.5px]">
-              {[
-                ['Open instagram.com in a desktop browser', 'Make sure you’re logged in to the account whose saves you want.'],
-                ['Run the harvester there', <>Either click the bookmarklet below on instagram.com, or open DevTools (F12 → Console), paste the script and hit Enter. Chrome may ask you to type <code className="font-mono">allow pasting</code> first.</>],
-                ['Press Start and wait', 'A small panel appears. It pages through your saves at ~1 request/second (Instagram is slow on big libraries — a few thousand saves can take 20–40 minutes; you can Stop and later Start again to resume).'],
-                ['Send to Resurfly (or drop the JSON here)', 'When it finishes, click “Send to Resurfly” — the script you copied embeds a private 24-hour upload token, so it posts straight into this dashboard. Or “Download JSON” and drop the file below. Media links expire in a few days, so don’t wait. Analysis then runs in the background.'],
-              ].map(([t, d], i) => (
-                <li key={i} className="flex gap-3"><span className="font-mono text-[11px] text-accent pt-1 w-5 shrink-0">{String(i + 1).padStart(2, '0')}</span><div><div className="font-medium">{t}</div><div className="text-muted mt-0.5 leading-relaxed">{d}</div></div></li>
-              ))}
-            </ol>
-            <div className="mt-6 flex flex-wrap items-center gap-2">
-              <button onClick={copyScript} disabled={!script} className="btn btn-primary"><Copy size={14} /> Copy console script</button>
-              <a ref={bookmarkletRef} onClick={(e) => { e.preventDefault(); toast('Drag this button to your bookmarks bar, then click it on instagram.com'); }} draggable className={cn('btn', !bookmarklet && 'opacity-50')} title="Drag me to your bookmarks bar"><Bookmark size={14} /> Harvest saves (bookmarklet)</a>
-              <a href="/harvester.js" target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm text-muted">View source</a>
-            </div>
-            <div className="mt-4 text-[12px] text-muted leading-relaxed">Privacy: the script only talks to instagram.com using your own session and writes a file to your computer. Nothing is sent anywhere else. It respects rate limits and stops politely on errors.</div>
-          </div>
-          <div className="flex flex-col gap-4">
-            <DropZone accept=".json,application/json" onFile={(f) => upHarvest.mutate(f)} busy={upHarvest.isPending} label="Drop the harvester JSON here" hint="resurfly-harvest-YYYYMMDD.json · or click to choose" />
-            <div className="card-flat p-4 text-[12.5px] text-muted leading-relaxed"><FileJson size={14} className="inline mr-1.5 -mt-0.5 text-ink" />Re-running the harvester later only adds new saves and refreshes counts. Your notes, favorites and analyses are kept.</div>
-          </div>
-        </motion.div>
-      )}
+      <Section n={2} title="One-time script" blurb="Bookmarklet or console script on instagram.com. Brings the most detail per save." icon={<Terminal size={16} />} open={scriptOpen} onToggle={() => setScriptOpen((o) => !o)}>
+        <ScriptSteps autoAnalyze={autoAnalyze} />
+      </Section>
 
-      {tab === 'export' && (
-        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="grid lg:grid-cols-[1.1fr_1fr] gap-4">
-          <div className="card p-6">
-            <div className="eyebrow mb-3">Official Instagram data export</div>
-            <ol className="space-y-4 text-[13.5px]">
-              {[
-                ['Request your data', <>Instagram app → Settings → <b>Accounts Center</b> → Your information and permissions → <b>Download your information</b> → Download or transfer information → select your Instagram profile → <b>Some of your information</b> → tick <b>Saved</b> (and Likes if you want) → Download to device → format <b>JSON</b>, media quality low → Create files.</>],
-                ['Wait for the email', 'Usually minutes to a couple of days. Download the ZIP (it can be split in parts — upload each).'],
-                ['Upload the ZIP here', 'We read saved_posts.json and saved_collections.json. This gives you links + save dates + collections. Captions/thumbnails are then fetched best-effort from public embed pages; for full media & transcripts use the harvester too — both merge into the same saves.'],
-              ].map(([t, d], i) => (
-                <li key={i} className="flex gap-3"><span className="font-mono text-[11px] text-accent pt-1 w-5 shrink-0">{String(i + 1).padStart(2, '0')}</span><div><div className="font-medium">{t}</div><div className="text-muted mt-0.5 leading-relaxed">{d}</div></div></li>
-              ))}
-            </ol>
-            <div className="mt-4"><Toggle checked={includeLiked} onChange={setIncludeLiked} label="Also import liked posts (as a “Liked” collection)" /></div>
-          </div>
-          <DropZone accept=".zip,application/zip" onFile={(f) => upExport.mutate(f)} busy={upExport.isPending} label="Drop the Instagram export ZIP here" hint="instagram-username-date-xxxx.zip (JSON format)" />
-        </motion.div>
-      )}
-
-      {tab === 'urls' && (
-        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="grid lg:grid-cols-[1.1fr_1fr] gap-4">
-          <div className="card p-6">
-            <div className="eyebrow mb-3">Paste post / reel links</div>
-            <p className="text-[13.5px] text-muted leading-relaxed">One per line (or comma-separated). Handy for saves from other people’s screenshots, DMs, or anything you want in the library without saving it on Instagram. Captions and thumbnails are fetched from public embed pages when possible; reels may also be transcribed.</p>
-            <Field label="Links">
-              <textarea value={urls} onChange={(e) => setUrls(e.target.value)} rows={7} placeholder={'https://www.instagram.com/reel/AbC123/\nhttps://www.instagram.com/p/XyZ789/'} className="input font-mono text-[12px]" />
-            </Field>
-            <button onClick={() => upUrls.mutate()} disabled={!urls.trim() || upUrls.isPending} className="btn btn-primary mt-3">{upUrls.isPending ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />} Import links</button>
-          </div>
-        </motion.div>
-      )}
+      <Section n={3} title="Advanced" blurb="Instagram data-export ZIP, or paste post and reel links." icon={<FileArchive size={16} />} open={advancedOpen} onToggle={() => setAdvancedOpen((o) => !o)}>
+        <AdvancedImport autoAnalyze={autoAnalyze} />
+      </Section>
 
       {/* History */}
       <div className="mt-8">
@@ -142,16 +114,16 @@ export default function Import() {
         {history.data?.imports.length ? (
           <div className="card-flat divide-y divide-line">
             {history.data.imports.map((h) => (
-              <div key={h.id} className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
+              <div key={h.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-[13px]">
                 <CheckCircle2 size={14} className="text-accent shrink-0" />
                 <span className="font-medium capitalize">{h.source}</span>
-                <span className="text-muted truncate">{h.filename || ''}</span>
-                <span className="ml-auto font-mono text-[11.5px] text-muted shrink-0">{h.total} total · {h.created} new · {h.updated} updated</span>
-                <span className="text-[11.5px] text-muted shrink-0 w-24 text-right">{fmtAgo(h.created_at)}</span>
+                <span className="text-muted truncate max-w-[40vw]">{h.filename || ''}</span>
+                <span className="ml-auto font-mono text-[11.5px] text-muted shrink-0 tabular">{h.total} total · {h.created} new · {h.updated} updated</span>
+                <span className="text-[11.5px] text-muted shrink-0 sm:w-24 text-right">{fmtAgo(h.created_at)}</span>
               </div>
             ))}
           </div>
-        ) : <div className="text-[13px] text-muted">No imports yet.</div>}
+        ) : <div className="text-[13px] text-muted">No imports yet. Pair the Companion above, or open the one-time script and drop its JSON here.</div>}
       </div>
     </div>
   );

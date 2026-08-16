@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Resurfly Companion — Options</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body class="options">
+  <div class="page">
+    <div class="head" style="margin-bottom:18px">
+      <img class="logo" src="icons/icon48.png" alt="" width="28" height="28" style="width:28px;height:28px;border-radius:8px" />
+      <div class="title" style="font-size:16px">Resurfly Companion</div>
+    </div>
+
+    <div id="welcome" class="card welcome hidden">
+      <h2>Installed. Two steps left.</h2>
+      <ol>
+        <li>Pin the extension: click the puzzle icon <span class="kbd">🧩</span> in Chrome's toolbar → pin <strong>Resurfly Companion</strong>.</li>
+        <li>In Resurfly open <strong>Import → Companion → Get pairing code</strong>, then paste the code below (or in the extension popup).</li>
+      </ol>
+      <p class="hint">After that it runs on its own: every 6 hours it reads the posts you saved on Instagram (using your own logged-in browser) and sends them to your Resurfly library.</p>
+    </div>
+
+    <h1 id="title" class="hidden">Options</h1>
+
+    <!-- pairing -->
+    <div class="card" id="card-pair">
+      <h2>Pairing</h2>
+      <div id="pair-unpaired">
+        <p>Paste the code from Resurfly → Import → Companion.</p>
+        <div class="row" style="margin-top:10px;max-width:360px">
+          <input class="code grow" type="text" id="code" placeholder="RSF-XXXX-XXXX" autocomplete="off" spellcheck="false" maxlength="14" />
+          <button class="btn primary" id="btn-pair">Connect</button>
+        </div>
+        <div id="pair-error" class="notice err hidden"></div>
+        <div id="pair-origin" class="notice warn hidden">The extension is not allowed to reach <span id="pair-origin-host"></span> yet — save the app URL below first.</div>
+      </div>
+      <div id="pair-paired" class="hidden">
+        <p>Paired as <strong id="device-name"></strong> with <strong id="paired-host"></strong> <span id="paired-since" class="hint" style="display:inline"></span>.</p>
+        <p class="hint">Last sync: <span id="last-sync">—</span> · In your library: <span id="total">—</span></p>
+        <div class="row" style="margin-top:10px">
+          <button class="btn danger" id="btn-unpair">Remove pairing</button>
+          <span class="hint" style="margin-top:0">Stops syncing from this browser and deletes the device token here. You can also revoke it in Resurfly → Settings → Companion.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- app url -->
+    <div class="card">
+      <h2>App URL</h2>
+      <p>Where your Resurfly runs. Leave it as <code>https://resurfly.com</code> for the hosted version; self-hosters enter their own origin. Chrome will ask you to allow the extension to talk to that site.</p>
+      <div class="row" style="margin-top:10px;max-width:460px">
+        <input class="grow" type="url" id="app-url" placeholder="https://resurfly.com" autocomplete="off" spellcheck="false" />
+        <button class="btn" id="btn-save-url">Save</button>
+      </div>
+      <div id="url-notice" class="notice hidden"></div>
+      <p class="hint" id="url-hint"></p>
+    </div>
+
+    <!-- what it sends -->
+    <div class="card">
+      <h2>What this extension does</h2>
+      <p>Every 6 hours (and when you press “Sync now”) it calls Instagram's own saved-posts endpoint <code>/api/v1/feed/saved/posts/</code> in your browser, exactly like the instagram.com web app does, and sends the post metadata (link, caption, creator, thumbnail/video URLs, counts) to your Resurfly. It reads only what you saved. It never posts, likes, follows or messages.</p>
+      <p style="margin-top:8px">The optional switch “Also harvest when my browser is closed” additionally sends three Instagram cookies (<code>sessionid</code>, <code>csrftoken</code>, <code>ds_user_id</code>) to your Resurfly, where they are stored encrypted and used only for the same read. Turning it off deletes them.</p>
+      <p class="hint">Details: <a href="https://github.com/tairqaldy/resurfly/blob/main/docs/COMPANION.md" target="_blank" rel="noopener">docs/COMPANION.md</a> · <a href="https://github.com/tairqaldy/resurfly/blob/main/docs/PRIVACY.md" target="_blank" rel="noopener">Privacy</a></p>
+    </div>
+
+    <div class="foot" style="margin-top:16px">
+      <span>Resurfly Companion <span id="version"></span></span>
+      <a href="https://github.com/tairqaldy/resurfly" target="_blank" rel="noopener">Source on GitHub</a>
+    </div>
+  </div>
+  <script type="module" src="options.js"></script>
+</body>
+</html>

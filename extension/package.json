@@ -1,0 +1,10 @@
+{
+  "name": "resurfly-companion",
+  "private": true,
+  "type": "module",
+  "description": "Chrome extension (Manifest V3, no bundler). This file only marks the folder as ESM for Node tooling (validate.mjs, tests); it is not an npm workspace and has no dependencies. Exclude it from the Web Store zip if you like — Chrome ignores it either way.",
+  "scripts": {
+    "icons": "node build-icons.mjs",
+    "validate": "node validate.mjs"
+  }
+}

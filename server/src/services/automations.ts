@@ -6,11 +6,20 @@ import { bumpUsage, checkQuota, effectivePlanFor, quotaMessage } from './plans.j
 /* ------------------------------------------------------------------ */
 /* Config resolution: env wins (owner tenant only), then settings table */
 /* ------------------------------------------------------------------ */
+/**
+ * A tenant that connected through THIS server's Meta app (round 5 "Connect Instagram", `ig_accounts` row) receives
+ * webhooks signed with this server's app secret — so the operator's META_APP_SECRET / META_VERIFY_TOKEN apply to it too
+ * (rotation-safe: never copied into the tenant's settings). Tolerates the table not existing yet (pre-migration).
+ */
+function oauthConnected(tid: number): boolean {
+  try { return !!db().prepare('SELECT 1 FROM ig_accounts WHERE tenant_id = ?').get(tid); } catch { return false; }
+}
 export function metaConfig(tid: number) {
   const env = tid === OWNER_TENANT;
+  const viaApp = env || ((config.metaAppSecret || config.metaVerifyToken) ? oauthConnected(tid) : false);
   return {
-    appSecret: (env && config.metaAppSecret) || getSetting(tid, 'meta_app_secret') || '',
-    verifyToken: (env && config.metaVerifyToken) || getSetting(tid, 'meta_verify_token') || '',
+    appSecret: (viaApp && config.metaAppSecret) || getSetting(tid, 'meta_app_secret') || '',
+    verifyToken: (viaApp && config.metaVerifyToken) || getSetting(tid, 'meta_verify_token') || '',
     accessToken: (env && config.igAccessToken) || getSetting(tid, 'ig_access_token') || '',
     igUserId: (env && config.igUserId) || getSetting(tid, 'ig_user_id') || '',
     apiVersion: config.graphApiVersion,

@@ -24,7 +24,8 @@ export const ItemCard = memo(function ItemCard({ item, index = 0, selected, onSe
   if (view === 'list') {
     return (
       <motion.button layout onClick={onClick} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(index, 20) * 0.015 }}
-        className={cn('w-full text-left flex items-center gap-3 rounded-xl border p-2 pr-3 transition-colors hover:bg-surface-2/60', selected ? 'border-accent bg-accent-soft/40' : 'border-transparent hover:border-line')}>
+        aria-label={title} aria-pressed={selected}
+        className={cn('w-full text-left flex items-center gap-3 rounded-xl border p-2 pr-3 transition-colors hover:bg-surface-2/60 outline-none focus-visible:ring-2 focus-visible:ring-accent/40', selected ? 'border-accent bg-accent-soft/40' : 'border-transparent hover:border-line')}>
         <div className="relative h-14 w-11 shrink-0 overflow-hidden rounded-lg bg-surface-2">
           {item.thumb ? <img src={item.thumb} alt="" loading="lazy" className="h-full w-full object-cover" /> : <div className="h-full w-full grid place-items-center text-muted-2"><FileText size={14} /></div>}
         </div>
@@ -39,7 +40,7 @@ export const ItemCard = memo(function ItemCard({ item, index = 0, selected, onSe
           {a && <span className="inline-flex items-center gap-1.5"><CategoryDot category={a.category} />{a.category}</span>}
         </div>
         <div className="hidden sm:block shrink-0 w-24 truncate text-[12px] text-muted text-right">{item.author ? `@${item.author}` : ''}</div>
-        {needsUpgrade ? <span onClick={(e) => { e.stopPropagation(); openUpgrade({ reason: 'Upgrade to analyze the rest of your library' }); }} className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent-soft px-2 py-0.5 text-[10.5px] font-medium text-accent hover:bg-accent hover:text-accent-ink transition-colors" title="Outside your plan's analysis allowance"><Sparkles size={10} /> Upgrade</span> : <StatusGlyph status={status} busy={busy} />}
+        {needsUpgrade ? <span onClick={(e) => { e.stopPropagation(); openUpgrade({ reason: 'Upgrade to analyze the rest of your library' }); }} className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent-soft px-2 py-0.5 text-[10.5px] font-medium text-accent hover:bg-accent hover:text-accent-ink transition-colors" title="Past your plan's analysis allowance"><Sparkles size={10} /> Upgrade</span> : <StatusGlyph status={status} busy={busy} />}
       </motion.button>
     );
   }
@@ -61,7 +62,7 @@ export const ItemCard = memo(function ItemCard({ item, index = 0, selected, onSe
           <div className="h-full w-full grid place-items-center text-muted-2 p-6 text-center">
             <div>
               <FileText size={22} className="mx-auto mb-2" />
-              <div className="text-[11.5px] leading-snug clamp-3">{item.caption || 'No preview available'}</div>
+              <div className="text-[11.5px] leading-snug clamp-3">{item.caption || 'No preview'}</div>
             </div>
           </div>
         )}
@@ -93,12 +94,12 @@ export const ItemCard = memo(function ItemCard({ item, index = 0, selected, onSe
               {a.usefulness_score >= 8 && <span className="ml-auto font-mono text-[10px] text-accent" title="Usefulness score">{a.usefulness_score}/10</span>}
             </>
           ) : needsUpgrade ? (
-            <button type="button" onClick={(e) => { e.stopPropagation(); openUpgrade({ reason: 'Upgrade to analyze the rest of your library' }); }} className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent-soft px-2 py-0.5 text-[10.5px] font-medium text-accent hover:bg-accent hover:text-accent-ink transition-colors" title="This save is outside your plan's analysis allowance">
+            <button type="button" onClick={(e) => { e.stopPropagation(); openUpgrade({ reason: 'Upgrade to analyze the rest of your library' }); }} className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent-soft px-2 py-0.5 text-[10.5px] font-medium text-accent hover:bg-accent hover:text-accent-ink transition-colors" title="Past your plan's analysis allowance">
               <Sparkles size={10} /> Upgrade to analyze
             </button>
           ) : (
             <span className="text-[11px] text-muted-2 inline-flex items-center gap-1">
-              {status === 'failed' ? <><AlertCircle size={11} className="text-danger" /> Analysis failed</> : status === 'skipped' ? 'Not enough content' : busy ? <><Loader2 size={11} className="animate-spin" /> Analyzing…</> : <><Clock size={11} /> Waiting for analysis</>}
+              {status === 'failed' ? <><AlertCircle size={11} className="text-danger" /> Analysis failed</> : status === 'skipped' ? 'Not enough content to analyze' : busy ? <><Loader2 size={11} className="animate-spin" /> Analyzing…</> : <><Clock size={11} /> In the queue</>}
             </span>
           )}
         </div>
@@ -112,5 +113,5 @@ function StatusGlyph({ status, busy, onDark }: { status: string; busy: boolean; 
   const base = onDark ? 'rounded-md bg-black/55 p-1 text-white backdrop-blur' : 'text-muted';
   if (busy) return <span className={base} title="Analyzing"><Loader2 size={11} className="animate-spin" /></span>;
   if (status === 'failed') return <span className={cn(base, !onDark && 'text-danger')} title="Analysis failed"><AlertCircle size={11} /></span>;
-  return <span className={base} title="Waiting for analysis"><Clock size={11} /></span>;
+  return <span className={base} title="In the queue"><Clock size={11} /></span>;
 }

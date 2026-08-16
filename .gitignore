@@ -24,3 +24,5 @@ tmp/
 .railway/
 # internal, not for the public repo
 private/
+web/public/landing/cards.html
+extension/dist/

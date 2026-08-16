@@ -5,7 +5,8 @@ import { currentTenant, tid } from '../auth.js';
 import type { Analysis, ItemRow } from '../types.js';
 import { worker } from '../services/worker.js';
 import { toCsv, toExportItem, toMarkdownDigest, toObsidianZip } from '../services/exporters.js';
-import { askStream, retrieve } from '../services/ask.js';
+import { addMessage, askStream, createConversation, defaultTitle, getConversation, historyFor, planAsk, routeIntent, summarizeTitle, updateConversation, type AskPlan, type AskSource } from '../services/ask.js';
+import { ONBOARDING_META_KEYS } from '../migrations/006-ask-onboarding.js';
 import { markResurfaced, pickResurface, resurfaceNotes, todayKey } from '../services/resurface.js';
 import { lightItem } from './items.js';
 import { hasOpenAI } from '../services/openai.js';
@@ -135,28 +136,82 @@ misc.get('/export', async (c) => {
 });
 
 /* ---------------- ask (killer feature) ---------------- */
+/**
+ * POST /api/ask  body { question, conversationId?, history?, intent? }  → SSE
+ *   event: meta     { conversationId, title, intent, filters, via, isNew }   (always first)
+ *   event: sources  AskSource[]                                              (may be [])
+ *   event: delta    "text chunk"                                            (0..n)
+ *   event: done     { ok, conversationId, title, intent, messageId, quota }
+ *   event: error    { message }                                              (instead of done)
+ * Both messages are persisted (user right after routing, assistant after the stream, also on client abort with the partial text).
+ * `intent` in the body forces a strategy (library|stats|inspire|create|analytics|chat) — used by the UI mode chips; otherwise routed.
+ */
 misc.post('/ask', async (c) => {
   const t = tid(c);
   if (!hasOpenAI(t)) return c.json({ error: 'OpenAI API key not configured' }, 503);
-  const body = await c.req.json<{ question: string; history?: Array<{ role: 'user' | 'assistant'; content: string }> }>();
-  const question = (body.question || '').trim();
+  const body = await c.req.json<{ question: string; conversationId?: number | null; history?: Array<{ role: 'user' | 'assistant'; content: string }>; intent?: string | null }>().catch(() => ({}) as any);
+  const question = String(body.question || '').trim();
   if (!question) return c.json({ error: 'question required' }, 400);
+  let conversationId: number | null = body.conversationId ? Number(body.conversationId) : null;
+  if (conversationId !== null && (!Number.isInteger(conversationId) || !getConversation(t, conversationId))) return c.json({ error: 'conversation not found' }, 404);
   const q = checkQuota(t, 'ask', 1);
   if (!q.ok) return quotaResponse(c, q);
   bumpUsage(t, 'ask', 1);
-  const sources = await retrieve(t, question, 12);
+
+  const isNew = conversationId === null;
+  if (conversationId === null) conversationId = createConversation(t, defaultTitle(question)).id;
+  const convId = conversationId;
+  let conv = getConversation(t, convId)!;
+  const hadMessages = conv.messageCount > 0;
+  // untitled conversation (created via POST /conversations without a title): give it the question as a provisional title
+  if (!hadMessages && conv.title === 'New conversation') conv = updateConversation(t, convId, { title: defaultTitle(question) }) || conv;
+  const autoTitled = !hadMessages && conv.title === defaultTitle(question); // only auto titles get replaced by the nano summary
+  const history: Array<{ role: 'user' | 'assistant'; content: string }> = Array.isArray(body.history) && body.history.length
+    ? body.history.filter((m: any) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string').slice(-8).map((m: any) => ({ role: m.role, content: String(m.content).slice(0, 4000) }))
+    : historyFor(t, convId, 8);
+  setMeta(t, ONBOARDING_META_KEYS.asked, String(now()));
+
   c.header('content-type', 'text/event-stream');
   c.header('cache-control', 'no-cache');
   c.header('x-accel-buffering', 'no');
   return stream(c, async (s) => {
     const send = (event: string, data: unknown) => s.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-    await send('sources', sources);
+    let aborted = false;
+    s.onAbort(() => { aborted = true; });
+    let answer = '';
+    let plan: AskPlan | null = null;
+    let sources: AskSource[] = [];
+    let intent: string = 'library';
+    let persisted = false;
+    const persistAssistant = () => {
+      if (persisted || !answer.trim()) return null;
+      persisted = true;
+      try { return addMessage(t, convId, { role: 'assistant', content: answer, sources, intent: plan?.intent || (intent as any) }); } catch { return null; }
+    };
     try {
-      for await (const delta of askStream(t, question, body.history || [], sources)) await send('delta', delta);
+      const routed = await routeIntent(t, question, history, body.intent || null);
+      intent = routed.intent;
+      addMessage(t, convId, { role: 'user', content: question, intent: routed.intent });
+      await send('meta', { conversationId: convId, title: conv.title, intent: routed.intent, filters: routed.filters, via: routed.via, isNew });
+      plan = await planAsk(t, question, routed, history);
+      sources = plan.sources;
+      await send('sources', sources);
+      for await (const delta of askStream(t, question, history, sources, plan)) {
+        if (aborted) break;
+        answer += delta;
+        await send('delta', delta);
+      }
+      const msg = persistAssistant();
+      let title = conv.title;
+      if (autoTitled && answer.trim() && !aborted) {
+        const better = await Promise.race([summarizeTitle(t, question, answer), new Promise<null>((r) => setTimeout(() => r(null), 8000).unref())]).catch(() => null);
+        if (better && getConversation(t, convId)?.title === conv.title) { updateConversation(t, convId, { title: better }); title = better; }
+      }
       const after = checkQuota(t, 'ask', 1);
-      await send('done', { ok: true, quota: { used: after.used, limit: finite(after.limit), remaining: finite(after.remaining), resetsAt: after.resetsAt } });
+      await send('done', { ok: true, conversationId: convId, title, intent: plan.intent, messageId: msg?.id ?? null, quota: { used: after.used, limit: finite(after.limit), remaining: finite(after.remaining), resetsAt: after.resetsAt } });
     } catch (e: any) {
-      await send('error', { message: String(e?.message || e) });
+      persistAssistant();
+      await send('error', { message: String(e?.message || e), conversationId: convId });
     }
   });
 });

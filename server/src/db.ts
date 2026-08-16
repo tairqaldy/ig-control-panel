@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { config } from './config.js';
 import { reindexAll } from './services/search.js';
+import { EXTRA_MIGRATIONS } from './migrations/index.js';
 
 export type DB = Database.Database;
 
@@ -295,6 +296,7 @@ function migrate(d: DB) {
     d.prepare('INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)').run(m.id, Date.now());
   });
   for (const m of MIGRATIONS) if (!applied.has(m.id)) run(m);
+  for (const m of [...EXTRA_MIGRATIONS].sort((a, b) => a.id - b.id)) if (!applied.has(m.id)) run(m as Migration);
 }
 
 /** Owner login email: APP_USERNAME if it looks like an email, else `${APP_USERNAME}@local`. */

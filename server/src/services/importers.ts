@@ -3,6 +3,9 @@ import AdmZip from 'adm-zip';
 import { db, now, j, OWNER_TENANT } from '../db.js';
 import type { HarvestFile, HarvestItem, MediaType, MediaUrls } from '../types.js';
 import { recomputeSavedAtEst } from './scope.js';
+import { worker, type EnqueueResult } from './worker.js';
+import { hasOpenAI } from './openai.js';
+import { processItem } from './pipeline.js';
 
 export interface ImportResult {
   importId: number;
@@ -62,7 +65,7 @@ export function idFor(tid: number, h: HarvestItem): string | null {
  * Upsert normalized items for one tenant. Existing items get their volatile fields refreshed (media urls, counts, collections),
  * but their pipeline outputs (analysis, transcript, thumbs) are preserved.
  */
-export function upsertItems(tid: number, items: HarvestItem[], source: 'harvest' | 'export' | 'manual', filename?: string, opts: { rankOffset?: number } = {}): ImportResult {
+export function upsertItems(tid: number, items: HarvestItem[], source: 'harvest' | 'export' | 'manual', filename?: string, opts: { rankOffset?: number; chunked?: boolean; importId?: number } = {}): ImportResult {
   const d = db();
   const t = now();
   const ids: string[] = [];
@@ -161,7 +164,13 @@ export function upsertItems(tid: number, items: HarvestItem[], source: 'harvest'
 
   // A harvest is always a newest-first prefix of the saved feed. If it brought NEW items, shift every older ranked
   // item (of this tenant) not in this import down by that many, so a limited/incremental re-harvest never collides with existing ranks.
-  if (source === 'harvest' && created > 0 && ids.length) {
+  if (source === 'harvest' && created > 0 && ids.length && opts.chunked) {
+    // Chunked harvest (Companion / server run): earlier chunks of the same run already hold their final ranks (< rankOffset) —
+    // only items at or below this chunk's position move down. `json_each` keeps the id list out of the bind-variable limit.
+    const from = opts.rankOffset ?? 0;
+    const excl = JSON.stringify(ids);
+    d.prepare('UPDATE items SET saved_rank = saved_rank + ? WHERE tenant_id = ? AND saved_rank IS NOT NULL AND saved_rank >= ? AND id NOT IN (SELECT value FROM json_each(?))').run(created, tid, from, excl);
+  } else if (source === 'harvest' && created > 0 && ids.length) {
     const older = (d.prepare('SELECT COUNT(*) AS n FROM items WHERE tenant_id = ? AND saved_rank IS NOT NULL').get(tid) as any).n as number;
     if (older > ids.length) {
       const tmp = d.prepare(`UPDATE items SET saved_rank = saved_rank + ? WHERE tenant_id = ? AND saved_rank IS NOT NULL AND id NOT IN (${ids.map(() => '?').join(',')})`);
@@ -169,11 +178,19 @@ export function upsertItems(tid: number, items: HarvestItem[], source: 'harvest'
     }
   }
 
-  const info = d
-    .prepare('INSERT INTO imports (tenant_id, source, filename, total, created, updated, skipped, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(tid, source, filename || null, items.length, created, updated, skipped, t);
+  let importId: number;
+  if (opts.importId && d.prepare('SELECT id FROM imports WHERE id = ? AND tenant_id = ?').get(opts.importId, tid)) {
+    // chunked run: accumulate into the run's single imports row
+    d.prepare('UPDATE imports SET total = total + ?, created = created + ?, updated = updated + ?, skipped = skipped + ? WHERE id = ?').run(items.length, created, updated, skipped, opts.importId);
+    importId = opts.importId;
+  } else {
+    const info = d
+      .prepare('INSERT INTO imports (tenant_id, source, filename, total, created, updated, skipped, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(tid, source, filename || null, items.length, created, updated, skipped, t);
+    importId = Number(info.lastInsertRowid);
+  }
   if (source === 'harvest') { try { recomputeSavedAtEst(tid); } catch (e) { console.warn('[import] saved_at_est recompute failed', e); } }
-  return { importId: Number(info.lastInsertRowid), total: items.length, created, updated, skipped, ids };
+  return { importId, total: items.length, created, updated, skipped, ids };
 }
 
 /** Parse a Resurfly harvester JSON file (or a raw array of items). */
@@ -374,4 +391,41 @@ export function fixMojibake(s: string | undefined | null): string | undefined {
 
 export function itemCollections(collections: string | null): string[] {
   return j<string[]>(collections, []);
+}
+
+/* ------------------------------------------------------------------ */
+/* Shared post-import step (used by the Companion / server-side harvest;  */
+/* routes/import.ts keeps its identical local copy)                      */
+/* ------------------------------------------------------------------ */
+
+export interface AfterImportResult { queued: number; leftOut: number; quota: EnqueueResult['quota'] | null; mediaOnly?: boolean }
+
+/**
+ * After an import: queue the affected items for processing. Analysis needs OpenAI (and counts against the plan's
+ * allowance — newest first, the rest is `leftOut`); media is always fetched promptly because CDN links expire in ~1 day.
+ */
+export function afterImport(tid: number, allIds: string[], autoAnalyze: boolean): AfterImportResult {
+  if (!allIds.length) return { queued: 0, leftOut: 0, quota: null };
+  const d = db();
+  const need = d.prepare("SELECT id FROM items WHERE id = ? AND tenant_id = ? AND (analysis_status != 'done' OR media_status = 'pending')");
+  const ids = allIds.filter((id) => !!need.get(id, tid));
+  if (!ids.length) return { queued: 0, leftOut: 0, quota: null };
+  if (hasOpenAI(tid) && autoAnalyze) {
+    const r = worker.enqueue(tid, ids);
+    if (r.leftOut > 0) {
+      const queuedSet = new Set((d.prepare(`SELECT id FROM items WHERE tenant_id = ? AND queue_state IN ('queued','running')`).all(tid) as Array<{ id: string }>).map((x) => x.id));
+      mediaOnlyFetch(ids.filter((id) => !queuedSet.has(id)));
+    }
+    return r;
+  }
+  mediaOnlyFetch(ids);
+  return { queued: 0, leftOut: 0, quota: null, mediaOnly: true };
+}
+
+function mediaOnlyFetch(ids: string[]) {
+  (async () => {
+    for (const id of ids) {
+      try { await processItem(id, { mediaOnly: true }); } catch {}
+    }
+  })();
 }

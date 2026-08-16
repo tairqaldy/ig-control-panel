@@ -20,6 +20,7 @@
     "docker:run": "docker run --rm -p 8080:8080 --env-file .env -v resurfly-data:/data resurfly"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "puppeteer-core": "^24.43.1"
   }
 }

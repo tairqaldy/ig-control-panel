@@ -15,11 +15,14 @@ import Automations from './pages/Automations';
 import Settings from './pages/Settings';
 import Resurface from './pages/Resurface';
 const Graph = lazy(() => import('./pages/Graph'));
+const Analytics = lazy(() => import('./pages/Analytics')); // Instagram analytics (ROUND5 §3)
 // Hosted-only pages, lazy so the single-tenant bundle doesn't pay for them.
 const Landing = lazy(() => import('./pages/Landing'));
 const Pricing = lazy(() => import('./pages/Pricing'));
 const Signup = lazy(() => import('./pages/Signup'));
 const Billing = lazy(() => import('./pages/Billing'));
+const Welcome = lazy(() => import('./pages/Welcome')); // guided first run (ROUND5 §7); Dashboard redirects '/' → '/welcome' on hosted first run
+const Legal = lazy(() => import('./pages/Legal')); // /privacy, /terms, /refunds (ROUND5 §8b) — public, rendered outside the app shell whatever the auth state
 
 function Loading() {
   return (
@@ -33,6 +36,7 @@ function Gate() {
   const auth = useAuth();
   const loc = useLocation();
   if (auth.loading) return <Loading />;
+  if (/^\/(privacy|terms|refunds)\/?$/.test(loc.pathname)) return <Suspense fallback={<Loading />}><Legal /></Suspense>;
   if (!auth.authenticated) {
     // Single-tenant: the login form everywhere (unchanged). Hosted: public marketing routes + login/signup.
     if (!auth.hosted) return <Login />;
@@ -59,7 +63,9 @@ function Gate() {
             <Route path="/ask" element={<Ask />} />
             <Route path="/graph" element={<Suspense fallback={<Skeleton className="h-[70vh] w-full rounded-2xl" />}><Graph /></Suspense>} />
             <Route path="/import" element={<Import />} />
+            <Route path="/welcome" element={<Suspense fallback={<Skeleton className="h-[60vh] w-full rounded-2xl" />}><Welcome /></Suspense>} />
             <Route path="/automations" element={<Automations />} />
+            <Route path="/analytics" element={<Suspense fallback={<Skeleton className="h-[60vh] w-full rounded-2xl" />}><Analytics /></Suspense>} />
             <Route path="/settings" element={<Settings />} />
             {auth.hosted && <Route path="/billing" element={<Suspense fallback={<Skeleton className="h-[60vh] w-full rounded-2xl" />}><Billing /></Suspense>} />}
             <Route path="/pricing" element={<Navigate to={auth.hosted ? '/billing' : '/'} replace />} />

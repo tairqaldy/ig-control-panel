@@ -14,7 +14,7 @@
 
 **Retention & deletion.** Data lives in the operator's private database and can be deleted at any time by the operator (per-item delete, or wiping the data directory). Anyone who messaged the account can request deletion of their messages by contacting the account owner on Instagram.
 
-**Data deletion callback.** This app does not use Facebook Login for other users; the operator is the only user. Deletion requests: message the account owner on Instagram.
+**Data deletion callback.** The operator is the only user of this app. Removing the app under Instagram → Apps and websites triggers `/api/instagram/deauthorize` (token deleted) and `/api/instagram/delete` (automation contacts, events and cached analytics deleted). Anyone who messaged the account: message the account owner on Instagram.
 
 **Contact.** The Instagram account that runs this instance.
 
@@ -26,7 +26,11 @@ The hosted version runs the same open-source code, operated by Resurfly (contact
 
 **Account.** We store your e-mail address, a salted password hash, your plan and billing status, and usage counters (how many saves were analyzed, questions asked, messages sent) so the plan limits can be enforced.
 
-**Your saved posts.** The harvester runs in *your* browser with *your* Instagram session; we never see or store your Instagram password or session cookies. What reaches us is the harvest JSON (post metadata, captions, creator usernames, thumbnail/video URLs). We download thumbnails/frames and, for reels, the audio, so we can transcribe and analyze them. Analyses, transcripts, embeddings and thumbnails are stored per account and are never shown to other accounts.
+**Your saved posts.** The Companion extension and the harvester script run in *your* browser with *your* Instagram session; we never see your Instagram password. What reaches us is the harvest JSON (post metadata, captions, creator usernames, thumbnail/video URLs). We download thumbnails/frames and, for reels, the audio, so we can transcribe and analyze them. Analyses, transcripts, embeddings and thumbnails are stored per account and are never shown to other accounts.
+
+**Background sync (opt-in).** Only if you switch on "Also harvest when my browser is closed" in the Companion, it sends us your Instagram session cookies (`sessionid`, `csrftoken`, `ds_user_id`) and browser user-agent once. We store them encrypted (AES-256-GCM), use them solely to read your saved-posts feed about every 12 hours, never log them, and delete them the moment you switch the option off, revoke the device, or delete your account. If Instagram invalidates the session we stop and ask you to reconnect.
+
+**Instagram connection.** When you press "Connect Instagram" we receive an access token for your professional account through Meta's Instagram Login, stored encrypted and refreshed automatically. We use it to receive DM/comment/story-reply webhooks for your automations, to send the replies you configured, and to read your account and post insights for the Analytics page. Disconnecting in Resurfly, or removing Resurfly under Instagram → Apps and websites, deletes the token; a data-deletion request from Instagram additionally deletes stored automation contacts, events and cached analytics.
 
 **Processors.** OpenAI (analysis, transcription, embeddings — under OpenAI's API terms, no training on your data), Railway (hosting, EU/US regions), Cloudflare (DNS, and R2 object storage when enabled), Paddle (payments — Paddle is the merchant of record and stores card details; we never see them).
 
@@ -34,6 +38,6 @@ The hosted version runs the same open-source code, operated by Resurfly (contact
 
 **Export.** JSON, CSV, Markdown and Obsidian exports work on every plan, including after the trial ends.
 
-**Automations.** If you connect your own Meta app, incoming DMs/comments/story replies are processed exactly as described above for a self-hosted instance, scoped to your account.
+**Automations.** Once your Instagram account is connected, incoming DMs/comments/story replies are processed exactly as described above for a self-hosted instance, scoped to your account.
 
 **No tracking.** No third-party analytics or ad pixels on the app; the marketing page may use privacy-preserving, cookie-less analytics.

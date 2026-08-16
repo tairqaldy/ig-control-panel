@@ -3,12 +3,13 @@ import { useQuery } from '@tanstack/react-query';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
 import { forceX, forceY, forceCollide } from 'd3-force';
 import { AnimatePresence, motion } from 'motion/react';
-import { Search, X, Maximize2, RotateCcw, Waypoints, Info, Focus, MousePointerClick, SlidersHorizontal, ChevronLeft } from 'lucide-react';
+import { Search, X, Maximize2, RotateCcw, Focus, MousePointerClick, SlidersHorizontal, ChevronLeft, AlertCircle, RefreshCw } from 'lucide-react';
 import { api, qs } from '../lib/api';
 import type { GraphData, GraphNode, GraphLink, Facets } from '../lib/types';
 import { useItemModal, useTheme } from '../lib/store';
 import { categoryHue, cn } from '../lib/utils';
 import { Skeleton, Toggle, CategoryDot } from '../components/ui';
+import { AnalysisEmpty } from '../components/Onboarding';
 
 type N = GraphNode & { x?: number; y?: number; vx?: number; vy?: number; __r?: number; fx?: number; fy?: number };
 type L = GraphLink & { source: N | string; target: N | string };
@@ -43,7 +44,7 @@ export default function Graph() {
   const [query, setQuery] = useState('');
   const [hover, setHover] = useState<N | null>(null);
   const [focus, setFocus] = useState<N | null>(null);
-  const [panel, setPanel] = useState<'none' | 'settings' | 'legend'>('none');
+  const [panel, setPanel] = useState<'none' | 'settings'>('none');
   const [engineRunning, setEngineRunning] = useState(true);
   const fittedRef = useRef(false);
   const hoverIdRef = useRef<string | null>(null);
@@ -186,7 +187,7 @@ export default function Graph() {
   };
 
   const legend = [
-    { label: 'Save (color = category, size = usefulness)', color: 'oklch(0.55 0.13 210)' },
+    { label: 'Save (color: category, size: usefulness)', color: 'oklch(0.55 0.13 210)' },
     { label: 'Category hub', color: dark ? '#edeae2' : '#17161a' },
     { label: 'Tag', color: dark ? '#4fd39a' : '#177a4c' },
     { label: 'Creator', color: dark ? '#e0a84a' : '#b7791f' },
@@ -195,8 +196,17 @@ export default function Graph() {
 
   return (
     <div ref={wrapRef} className="relative -mx-4 sm:-mx-6 lg:-mx-8 -my-6 lg:-my-8 h-[calc(100vh-3.5rem)] lg:h-screen overflow-hidden bg-surface">
-      {gq.isLoading ? <Skeleton className="absolute inset-0" /> : data.nodes.length === 0 ? (
-        <div className="absolute inset-0 grid place-items-center text-center p-8"><div><Waypoints size={28} className="mx-auto text-muted mb-3" /><div className="display text-[22px]">No graph yet</div><div className="text-[13px] text-muted mt-1 max-w-sm">The graph is built from AI tags, categories, creators and embedding similarity — it appears once saves are analyzed.</div></div></div>
+      {gq.isLoading ? <Skeleton className="absolute inset-0" /> : gq.isError ? (
+        <div className="absolute inset-0 grid place-items-center p-8">
+          <div className="text-center flex flex-col items-center gap-3 max-w-sm">
+            <AlertCircle size={24} className="text-danger" />
+            <div className="display text-[22px]">The graph did not load</div>
+            <div className="text-[13px] text-muted">{(gq.error as Error)?.message || 'The server did not answer.'}</div>
+            <button onClick={() => gq.refetch()} className="btn btn-primary mt-1"><RefreshCw size={14} /> Try again</button>
+          </div>
+        </div>
+      ) : data.nodes.length === 0 ? (
+        <div className="absolute inset-0 grid place-items-center p-8"><AnalysisEmpty page="graph" filtered={!!category || (!!gq.data && gq.data.meta.items > 0)} onClearFilters={() => { setCategory(''); setMinTag(2); setShowTags(true); setShowSimilar(true); }} className="w-full max-w-lg !border-0 !bg-transparent" /></div>
       ) : (
         <ForceGraph2D
           ref={fgRef as any}
@@ -226,30 +236,28 @@ export default function Graph() {
 
       {/* Top bar: title + search + category chips */}
       <div className="pointer-events-none absolute inset-x-0 top-0 p-3 sm:p-4 flex flex-col gap-2">
-        <div className="flex items-start gap-2 flex-wrap">
-          <div className="pointer-events-auto card px-3.5 py-2 flex items-center gap-3">
-            <div>
-              <div className="eyebrow">Knowledge graph</div>
-              <div className="display text-[20px] leading-tight">The shape of your <em className="text-accent not-italic">taste</em></div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="pointer-events-auto card px-3 sm:px-3.5 py-1.5 sm:py-2 flex items-center gap-3 min-w-0">
+            <div className="min-w-0">
+              <div className="eyebrow hidden sm:block">Knowledge graph</div>
+              <div className="display text-[17px] sm:text-[20px] leading-tight truncate">The shape of your <em className="text-accent not-italic">taste</em></div>
             </div>
-            {meta && <div className="hidden sm:block text-[11px] text-muted font-mono border-l border-line pl-3">{meta.items} saves · {meta.tags} tags{showAuthors ? ` · ${meta.authors} creators` : ''} · {data.links.length} links</div>}
+            {meta && <div className="hidden md:block text-[11px] text-muted font-mono border-l border-line pl-3 whitespace-nowrap">{meta.items} saves · {meta.tags} tags{showAuthors ? ` · ${meta.authors} creators` : ''} · {data.links.length} links</div>}
           </div>
-          <div className="pointer-events-auto card px-2 py-1.5 flex items-center gap-1.5">
-            <Search size={14} className="text-muted ml-1" />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Highlight… (title, tag, creator)" className="bg-transparent text-[13px] outline-none w-52 placeholder:text-muted-2" />
-            {query && <button onClick={() => setQuery('')} className="btn btn-ghost btn-sm !px-1"><X size={13} /></button>}
+          <div className="pointer-events-auto card px-2 py-1.5 flex items-center gap-1.5 flex-1 sm:flex-none min-w-[140px] max-w-xs">
+            <Search size={14} className="text-muted ml-1 shrink-0" />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Highlight a title, tag or creator" aria-label="Highlight nodes" className="bg-transparent text-[13px] outline-none w-full sm:w-52 placeholder:text-muted-2 min-w-0" />
+            {query && <button onClick={() => setQuery('')} className="btn btn-ghost btn-sm !px-1" aria-label="Clear highlight"><X size={13} /></button>}
           </div>
           <div className="pointer-events-auto ml-auto flex items-center gap-1.5">
-            <button onClick={() => setPanel(panel === 'legend' ? 'none' : 'legend')} className={cn('btn btn-sm', panel === 'legend' && 'chip-active border-accent')}><Info size={13} /> Legend</button>
-            <button onClick={() => setPanel(panel === 'settings' ? 'none' : 'settings')} className={cn('btn btn-sm', panel === 'settings' && 'chip-active border-accent')}><SlidersHorizontal size={13} /> Tune</button>
-            <button onClick={() => { setFocus(null); fgRef.current?.zoomToFit(600, 40); }} className="btn btn-sm" title="Fit to screen"><Maximize2 size={13} /></button>
-            <button onClick={() => fgRef.current?.d3ReheatSimulation()} className="btn btn-sm" title="Shake the layout"><RotateCcw size={13} /></button>
+            <button onClick={() => setPanel(panel === 'settings' ? 'none' : 'settings')} aria-expanded={panel === 'settings'} className={cn('btn btn-sm', panel === 'settings' && 'chip-active border-accent')}><SlidersHorizontal size={13} /> Tune</button>
+            <button onClick={() => { setFocus(null); fgRef.current?.zoomToFit(600, 40); }} className="btn btn-sm" title="Fit to screen" aria-label="Fit to screen"><Maximize2 size={13} /></button>
           </div>
         </div>
-        {/* Category chips: one click to focus a cluster */}
-        <div className="pointer-events-auto flex flex-wrap gap-1.5 max-w-4xl">
+        {/* Category chips: one click to focus a cluster (single scrolling row on phones) */}
+        <div className="pointer-events-auto flex flex-nowrap sm:flex-wrap gap-1.5 max-w-4xl overflow-x-auto sm:overflow-visible pb-1 -mx-3 px-3 sm:mx-0 sm:px-0" role="group" aria-label="Focus a category">
           {categories.map((c) => (
-            <button key={c} onClick={() => (focus?.type === 'category' && focus.label === c ? (setFocus(null), fgRef.current?.zoomToFit(600, 40)) : focusCategory(c))} className={cn('chip', focus?.type === 'category' && focus.label === c && 'chip-active')}><CategoryDot category={c} />{c}</button>
+            <button key={c} onClick={() => (focus?.type === 'category' && focus.label === c ? (setFocus(null), fgRef.current?.zoomToFit(600, 40)) : focusCategory(c))} aria-pressed={focus?.type === 'category' && focus.label === c} className={cn('chip shrink-0', focus?.type === 'category' && focus.label === c && 'chip-active')}><CategoryDot category={c} />{c}</button>
           ))}
         </div>
       </div>
@@ -257,9 +265,9 @@ export default function Graph() {
       {/* Focus banner */}
       <AnimatePresence>
         {focus && (
-          <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="absolute left-3 sm:left-4 top-[110px] sm:top-[104px] card px-3 py-2 flex items-center gap-2 text-[12.5px]">
-            <Focus size={13} className="text-accent" /> Focus: <b>{focus.type === 'tag' ? `#${focus.label}` : focus.label}</b> <span className="text-muted">· {neighbors.get(focus.id)?.size ?? 0} connected</span>
-            <button onClick={() => { setFocus(null); fgRef.current?.zoomToFit(600, 40); }} className="btn btn-ghost btn-sm !px-1"><ChevronLeft size={13} /> back</button>
+          <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="absolute left-3 sm:left-4 right-3 sm:right-auto top-[104px] card px-3 py-2 flex items-center gap-2 text-[12.5px] sm:max-w-sm">
+            <Focus size={13} className="text-accent shrink-0" /> <span className="truncate"><b>{focus.type === 'tag' ? `#${focus.label}` : focus.label}</b> <span className="text-muted">· {neighbors.get(focus.id)?.size ?? 0} connected</span></span>
+            <button onClick={() => { setFocus(null); fgRef.current?.zoomToFit(600, 40); }} className="btn btn-ghost btn-sm !px-1 shrink-0"><ChevronLeft size={13} /> All</button>
           </motion.div>
         )}
       </AnimatePresence>
@@ -267,22 +275,21 @@ export default function Graph() {
       {/* Right panels */}
       <AnimatePresence>
         {panel === 'settings' && (
-          <motion.div initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 12 }} className="absolute right-3 sm:right-4 top-[62px] card p-4 w-72 space-y-3 text-[13px]">
-            <div className="eyebrow">Tune the graph</div>
-            <select value={category} onChange={(e) => setCategory(e.target.value)} className="input !py-1.5"><option value="">All categories</option>{(facets.data?.categories || []).map((c) => <option key={c.name} value={c.name}>{c.name} ({c.n})</option>)}</select>
+          <motion.div initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 12 }} className="absolute right-3 sm:right-4 top-[58px] sm:top-[62px] card p-4 w-[calc(100vw-1.5rem)] sm:w-72 max-h-[calc(100%-5rem)] overflow-y-auto space-y-3 text-[13px]" role="dialog" aria-label="Tune the graph">
+            <div className="flex items-center"><div className="eyebrow">Tune</div><button onClick={() => setPanel('none')} className="btn btn-ghost btn-sm !px-1 ml-auto -mr-1" aria-label="Close"><X size={13} /></button></div>
+            <select value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Category" className="input !py-1.5"><option value="">All categories</option>{(facets.data?.categories || []).map((c) => <option key={c.name} value={c.name}>{c.name} ({c.n})</option>)}</select>
             <Toggle checked={showTags} onChange={setShowTags} label="Tags" />
             <Toggle checked={showAuthors} onChange={setShowAuthors} label="Creators" />
             <Toggle checked={showSimilar} onChange={setShowSimilar} label="Similarity links" />
             <label className="flex items-center justify-between gap-2 text-ink-2">Min tag uses <input type="range" min={1} max={12} value={minTag} onChange={(e) => setMinTag(Number(e.target.value))} className="accent-[var(--accent)] w-28" /><span className="font-mono text-[11px] text-muted w-4">{minTag}</span></label>
-            <label className="flex items-center justify-between gap-2 text-ink-2" title="Most recent saves shown. Fewer = smoother.">Saves shown <input type="range" min={100} max={3000} step={100} value={maxItems} onChange={(e) => setMaxItems(Number(e.target.value))} className="accent-[var(--accent)] w-28" /><span className="font-mono text-[11px] text-muted w-9">{maxItems}</span></label>
-            <div className="text-[11.5px] text-muted leading-snug">Scroll to zoom (thumbnails appear when close), drag to pan, drag nodes to rearrange. Click a save to open it, a tag/category/creator to focus, Esc to clear.</div>
-          </motion.div>
-        )}
-        {panel === 'legend' && (
-          <motion.div initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 12 }} className="absolute right-3 sm:right-4 top-[62px] card p-4 w-72 text-[12.5px]">
-            <div className="eyebrow mb-2">Legend</div>
-            {legend.map((l) => <div key={l.label} className="flex items-center gap-2 py-1"><span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: l.color }} />{l.label}</div>)}
-            <div className="mt-2 text-muted leading-snug">Thin links = tags/creators. Thicker links with moving dots (when focused) = the two saves are semantically similar. Categories sit on a ring; their saves gather around them.</div>
+            <label className="flex items-center justify-between gap-2 text-ink-2" title="Most recent saves shown. Fewer is smoother.">Saves shown <input type="range" min={100} max={3000} step={100} value={maxItems} onChange={(e) => setMaxItems(Number(e.target.value))} className="accent-[var(--accent)] w-28" /><span className="font-mono text-[11px] text-muted w-9">{maxItems}</span></label>
+            <button onClick={() => fgRef.current?.d3ReheatSimulation()} className="btn btn-sm w-full"><RotateCcw size={13} /> Shake the layout</button>
+            <div className="border-t border-line pt-3">
+              <div className="eyebrow mb-1.5">Legend</div>
+              {legend.map((l) => <div key={l.label} className="flex items-center gap-2 py-0.5 text-[12.5px]"><span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: l.color }} />{l.label}</div>)}
+              <div className="mt-2 text-[11.5px] text-muted leading-snug">Thin links: shared tags or creator. Thicker links with moving dots: similar meaning. Categories sit on a ring; their saves gather around them.</div>
+            </div>
+            <div className="text-[11.5px] text-muted leading-snug border-t border-line pt-3">Scroll to zoom, drag to pan, drag nodes to rearrange. Click a save to open it, a tag or category to focus, Esc to clear.</div>
           </motion.div>
         )}
       </AnimatePresence>

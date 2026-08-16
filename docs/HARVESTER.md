@@ -1,10 +1,22 @@
-# The harvester — exporting your Instagram saves
+# The harvester — exporting your Instagram saves (one-time script)
+
+> **Recommended path: the [Companion extension](COMPANION.md).** It reads the same feed with the same code, pairs in a minute, and then syncs new saves every 6 hours by itself. This page covers the one-time script — the fallback when you would rather not install an extension, or for a quick first import.
 
 The harvester is a small self-contained JavaScript file ([`harvester/harvester.js`](../harvester/harvester.js)) that runs **inside your own browser on instagram.com** and downloads all your saved posts as one JSON file. It's the richest import path: captions, creators, like/play counts, durations, audio titles, collections, and the media URLs Resurfly uses to fetch thumbnails, extract video frames and transcribe reels.
 
 ## Why a browser script?
 
 Instagram has no official API for reading your own saved posts. The web app you already use calls an internal endpoint (`/api/v1/feed/saved/posts/`) with your session; the harvester calls exactly the same endpoint, from the same page, with the same cookies — the way a browser extension would. Nothing is sent to any third party. The result either becomes a JSON file on your machine that *you* upload, or — if you copied the script from your own dashboard's Import page — goes straight to **your** Resurfly via the "Send to Resurfly" button (a token-gated form POST to your dashboard's URL; the token is private, lives 24 h, and only allows importing).
+
+## One core, three consumers
+
+`harvester/core.js` is the source of truth: a dependency-free ESM module with the endpoint paths (`SAVED_FEED_PATH`, `savedFeedUrl`, `collectionsListUrl`), request headers (`buildHeaders`), page helpers (`parseFeedPage`, `pageCursor`), the raw-media → `HarvestItem` normalizer (`normalizeItem`) and the logged-out heuristics (`looksLikeLoginPage`). It is used by
+
+- the **console script** (`harvester.js`, served at `/harvester.js`) — the block between `/* @core-begin */` and `/* @core-end */` is generated from `core.js` with the `export` keywords stripped, so the file stays a plain pasteable script;
+- the **Companion extension** (`extension/lib/core.js`, a byte-identical copy);
+- the **server's background harvester** (`server/src/services/companion.ts` imports it directly) for the opt-in "harvest while my browser is closed" mode.
+
+Workflow when you change the normalizer: edit `core.js` → `node harvester/build.mjs` (regenerates the block and copies the file into the extension) → `node --check harvester/harvester.js`. `node harvester/build.mjs --check` exits 1 when either copy is stale; `node extension/validate.mjs` checks the extension side. Types live in `harvester/core.d.ts`. See [`harvester/README.md`](../harvester/README.md).
 
 Rate limits are respected (~1 request/second with jitter, exponential back-off on `429`, automatic retry on network blips). Instagram itself is slow when paginating deep into a big library: expect **~1.5–2 saves/second**, i.e. 5,000 saves ≈ 40–50 minutes. You can **Stop** at any time and click **Start** later — it resumes from where it left off (as long as the tab stays open).
 

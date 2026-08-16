@@ -1,0 +1,6 @@
+{
+  "name": "resurfly-harvester",
+  "private": true,
+  "type": "module",
+  "description": "core.js is the shared ESM harvester core (server + extension + console script). Not an npm workspace; this file only marks the folder as ESM."
+}

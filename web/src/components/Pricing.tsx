@@ -51,7 +51,7 @@ export function PricingCards({ catalog, interval, onChoose, current, busyPlan, c
         return (
           <motion.div key={p.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06, duration: 0.4, ease: [0.2, 0.7, 0.2, 1] }}
             className={cn('relative flex flex-col rounded-2xl border bg-surface', compact ? 'p-4' : 'p-6', featured ? 'border-accent shadow-[0_0_0_3px_color-mix(in_oklab,var(--accent)_14%,transparent)]' : 'border-line')} style={{ boxShadow: featured ? undefined : 'var(--shadow)' }}>
-            {featured && <span className="absolute -top-2.5 left-5 font-mono text-[10px] uppercase tracking-[0.14em] rounded-full bg-accent text-accent-ink px-2 py-0.5">Most people</span>}
+            {featured && <span className="absolute -top-2.5 left-5 font-mono text-[10px] uppercase tracking-[0.14em] rounded-full bg-accent text-accent-ink px-2 py-0.5">Most popular</span>}
             <div className="flex items-baseline justify-between">
               <div className="display text-[24px]">{p.name}</div>
               {isCurrent && <span className="chip chip-active !text-[11px]">Current plan</span>}

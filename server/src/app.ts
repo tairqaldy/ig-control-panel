@@ -15,6 +15,7 @@ import { misc } from './routes/misc.js';
 import { settings } from './routes/settings.js';
 import { automations, webhooks } from './routes/automations.js';
 import { account, billing, paddleWebhook, publicPlans } from './routes/billing.js';
+import { mountPublicExtras, mountProtectedExtras } from './routes/extra.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -70,6 +71,7 @@ export function createApp() {
   app.route('/api/webhooks/paddle', paddleWebhook);
   app.route('/api/plans', publicPlans);
   app.route('/api/import/harvest-form', harvestFormRoute);
+  mountPublicExtras(app);
   app.get('/harvester.js', (c) => {
     const p = findHarvester();
     if (!p) return c.text('// harvester not found', 404);
@@ -88,6 +90,7 @@ export function createApp() {
   app.route('/api/billing', billing);
   app.route('/api', account);
   app.route('/api', misc);
+  mountProtectedExtras(app);
 
   // Media (thumbnails/frames) — protected by session cookie AND the item must belong to the session's tenant
   app.use('/media/*', async (c, next) => {

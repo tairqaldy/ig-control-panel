@@ -3,9 +3,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Sparkles, ExternalLink, ShieldCheck, Download, RefreshCw } from 'lucide-react';
 import { api } from '../lib/api';
-import type { PlanCatalogEntry, PlanId, PlanInfo } from '../lib/types';
+import type { Limits, PlanCatalogEntry, PlanId, PlanInfo, PlansCatalog } from '../lib/types';
 import { useAuth, useQuota, useTheme } from '../lib/store';
-import { openCheckout, planName, quotaMessage } from '../lib/plans';
+import { fmtLimit, openCheckout, planName, quotaMessage } from '../lib/plans';
 import { Modal } from './ui';
 import { IntervalToggle, PricingCards, usePlansCatalog, type Interval } from './Pricing';
 
@@ -81,6 +81,35 @@ export function useUpgradeCheckout() {
   return { checkout, openPortal, busyPlan, waiting };
 }
 
+/** Human name for the metric the server reported in a 402 (`analyze`, `ask`, `rules`, `sends`, `harvests`, …). */
+function metricLabel(metric: string, window?: string | null): string {
+  switch (metric) {
+    case 'analyze': return window === 'month' ? 'saves analyzed this month' : 'saves analyzed';
+    case 'analyzeMonth': return 'saves analyzed this month';
+    case 'ask': return window === 'minute' ? 'questions per minute' : 'questions this month';
+    case 'askMinute': case 'ask_minute': return 'questions per minute';
+    case 'rules': return 'automation rules';
+    case 'sends': return 'automated replies this month';
+    case 'harvests': return 'imports today';
+    case 'graph': case 'graphNodes': return 'graph size';
+    default: return metric.replace(/[_-]/g, ' ');
+  }
+}
+
+/** "Pro: 300 · Studio: 1,500" for the limit that was hit, read from the live catalog — so the cards below answer the exact question. */
+function planCompare(metric: string, window: string | null | undefined, catalog: PlansCatalog): string | null {
+  const key: keyof Limits | null =
+    metric === 'analyze' ? (window === 'month' ? 'analyzePerMonth' : 'analyzeTotal')
+      : metric === 'analyzeMonth' ? 'analyzePerMonth'
+        : metric === 'ask' ? (window === 'minute' ? 'askPerMinute' : 'askPerMonth')
+          : metric === 'askMinute' || metric === 'ask_minute' ? 'askPerMinute'
+            : metric === 'rules' ? 'rules' : metric === 'sends' ? 'sendsPerMonth' : metric === 'harvests' ? 'harvestsPerDay' : metric === 'graph' || metric === 'graphNodes' ? 'graphNodes' : null;
+  if (!key) return null;
+  const unit = key === 'analyzeTotal' ? 'saves in total' : key === 'analyzePerMonth' ? 'new saves a month' : key === 'askPerMonth' ? 'questions a month' : key === 'askPerMinute' ? 'questions a minute' : key === 'rules' ? 'rules' : key === 'sendsPerMonth' ? 'replies a month' : key === 'harvestsPerDay' ? 'imports a day' : 'graph nodes';
+  const parts = catalog.plans.filter((p) => p.id === 'pro' || p.id === 'studio').map((p) => `${p.name} ${fmtLimit(p.limits[key])}`);
+  return parts.length ? `${parts.join(' · ')} ${unit}.` : null;
+}
+
 /** Global soft-wall. Mounted once in the Shell; opens on the `rs:quota` event or via useQuota().openUpgrade(). */
 export function UpgradeModal() {
   const { open, intent, close, plan } = useQuota();
@@ -91,6 +120,8 @@ export function UpgradeModal() {
   const { checkout, openPortal, busyPlan, waiting } = useUpgradeCheckout();
   const msg = quotaMessage(intent?.quota ?? null);
   const current = plan?.effectivePlan ?? plan?.plan ?? null;
+  const q = intent?.quota ?? null;
+  const compare = q ? planCompare(q.metric, q.window, catalog) : null;
   const onChoose = (p: PlanCatalogEntry, iv: Interval) => { void checkout(p, iv, close); };
   return (
     <Modal open={open} onClose={close} width="max-w-4xl">
@@ -98,9 +129,9 @@ export function UpgradeModal() {
         <div className="flex items-start gap-3 pr-8">
           <div className="h-9 w-9 shrink-0 grid place-items-center rounded-xl bg-accent-soft text-accent"><Sparkles size={17} /></div>
           <div>
-            <div className="eyebrow mb-1">{intent?.quota ? `${planName(intent.quota.plan)} limit · ${intent.quota.metric}` : current ? `You're on ${planName(current)}` : 'Plans'}</div>
+            <div className="eyebrow mb-1">{q ? `${planName(q.plan)} · ${metricLabel(q.metric, q.window)}${q.limit !== null && q.limit !== undefined ? ` · ${q.used.toLocaleString()} of ${fmtLimit(q.limit)} used` : ''}` : current ? `You're on ${planName(current)}` : 'Plans'}</div>
             <h2 className="display text-[26px] sm:text-[30px] leading-[1.05]">{intent?.reason || msg.title}</h2>
-            <p className="mt-2 text-[13.5px] text-muted leading-relaxed max-w-2xl">{msg.body}{intent?.quota && plan?.effectivePlan === 'free' ? ' Your library stays readable and exportable either way.' : ''}</p>
+            <p className="mt-2 text-[13.5px] text-muted leading-relaxed max-w-2xl">{msg.body}{compare ? ` ${compare}` : ''}{q && plan?.effectivePlan === 'free' ? ' Your library stays readable and exportable either way.' : ''}</p>
           </div>
         </div>
 

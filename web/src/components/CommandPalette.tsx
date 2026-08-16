@@ -3,7 +3,7 @@ import { Command } from 'cmdk';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { LayoutGrid, Library, MessageSquareText, Sparkles, Waypoints, Upload, Bot, Settings, Search, Tag, User, Sun, Moon, FileText, CreditCard } from 'lucide-react';
+import { LayoutGrid, Library, MessageSquareText, Sparkles, Waypoints, Upload, Bot, Settings, Search, Tag, User, Sun, Moon, FileText, CreditCard, BarChart3 } from 'lucide-react';
 import { api, qs } from '../lib/api';
 import { useAuth, useItemModal, usePalette, useTheme } from '../lib/store';
 import type { Facets, ItemsResponse } from '../lib/types';
@@ -33,11 +33,11 @@ export function CommandPalette() {
             <Command label="Command palette" shouldFilter={false} loop>
               <div className="flex items-center gap-2 border-b border-line px-4">
                 <Search size={16} className="text-muted" />
-                <Command.Input value={q} onValueChange={setQ} autoFocus placeholder="Search saves, tags, authors… or jump to a page" className="w-full bg-transparent py-3.5 text-[14px] outline-none placeholder:text-muted-2" />
+                <Command.Input value={q} onValueChange={setQ} autoFocus placeholder="Search saves, tags, creators, or jump to a page" className="w-full bg-transparent py-3.5 text-[14px] outline-none placeholder:text-muted-2" />
                 <kbd className="kbd">esc</kbd>
               </div>
               <Command.List className="max-h-[60vh] overflow-y-auto p-2 [&_[cmdk-group-heading]]:eyebrow [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
-                <Command.Empty className="px-3 py-8 text-center text-[13px] text-muted">Nothing found.</Command.Empty>
+                <Command.Empty className="px-3 py-8 text-center text-[13px] text-muted">{dq.length >= 2 ? <>No matches for “{dq}”. Try a shorter word.</> : 'Type at least two letters to search saves.'}</Command.Empty>
                 {items.data?.items.length ? (
                   <Command.Group heading="Saves">
                     {items.data.items.map((it) => (
@@ -57,14 +57,14 @@ export function CommandPalette() {
                   </Command.Group>
                 )}
                 {authors.length > 0 && (
-                  <Command.Group heading="Authors">
+                  <Command.Group heading="Creators">
                     {authors.map((t) => <Item key={t.name} onSelect={() => go(() => nav(`/library?author=${encodeURIComponent(t.name)}`))}><User size={14} className="text-muted" /><span className="text-[13px]">@{t.name}</span><span className="ml-auto font-mono text-[11px] text-muted">{t.n}</span></Item>)}
                   </Command.Group>
                 )}
                 <Command.Group heading="Go to">
                   {[
                     { l: 'Overview', to: '/', I: LayoutGrid }, { l: 'Library', to: '/library', I: Library }, { l: 'Resurface', to: '/resurface', I: Sparkles }, { l: 'Ask', to: '/ask', I: MessageSquareText },
-                    { l: 'Graph', to: '/graph', I: Waypoints }, { l: 'Import', to: '/import', I: Upload }, { l: 'Automations', to: '/automations', I: Bot },
+                    { l: 'Graph', to: '/graph', I: Waypoints }, { l: 'Import', to: '/import', I: Upload }, { l: 'Automations', to: '/automations', I: Bot }, { l: 'Analytics', to: '/analytics', I: BarChart3 },
                     ...(hosted ? [{ l: 'Billing', to: '/billing', I: CreditCard }] : []), { l: 'Settings', to: '/settings', I: Settings },
                   ].filter((p) => !dq || p.l.toLowerCase().includes(dq.toLowerCase())).map((p) => (
                     <Item key={p.to} onSelect={() => go(() => nav(p.to))}><p.I size={14} className="text-muted" /><span className="text-[13px]">{p.l}</span></Item>
@@ -72,6 +72,7 @@ export function CommandPalette() {
                   <Item onSelect={() => go(toggle)}>{theme === 'dark' ? <Sun size={14} className="text-muted" /> : <Moon size={14} className="text-muted" />}<span className="text-[13px]">Switch to {theme === 'dark' ? 'light' : 'dark'} theme</span></Item>
                 </Command.Group>
               </Command.List>
+              <div className="hidden sm:flex items-center gap-3 border-t border-line px-4 py-2 text-[11px] text-muted"><span><kbd className="kbd">↑</kbd> <kbd className="kbd">↓</kbd> move</span><span><kbd className="kbd">↵</kbd> open</span><span className="ml-auto">Type a word to search saves; a page name to jump</span></div>
             </Command>
           </motion.div>
         </motion.div>
@@ -82,7 +83,7 @@ export function CommandPalette() {
 
 function Item({ children, onSelect }: { children: React.ReactNode; onSelect: () => void }) {
   return (
-    <Command.Item onSelect={onSelect} className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-ink aria-selected:bg-surface-2 aria-selected:text-ink data-[selected=true]:bg-surface-2">
+    <Command.Item onSelect={onSelect} className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-ink aria-selected:bg-surface-2 aria-selected:text-ink data-[selected=true]:bg-surface-2 data-[selected=true]:ring-1 data-[selected=true]:ring-line-2">
       {children}
     </Command.Item>
   );

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Resurfly Companion</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body class="popup">
+  <div class="wrap">
+    <div class="head">
+      <img class="logo" src="icons/icon32.png" alt="" width="22" height="22" />
+      <div class="title">Resurfly Companion</div>
+      <div class="spacer"></div>
+      <button class="icon-btn" id="btn-options" title="Options" aria-label="Options">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+    </div>
+
+    <!-- loading -->
+    <div id="view-loading" class="status busy"><span class="dot"></span><span>Loading…</span></div>
+
+    <!-- not paired -->
+    <div id="view-unpaired" class="hidden">
+      <div class="card">
+        <h2>Pair with Resurfly</h2>
+        <p>In Resurfly open <strong>Import → Companion → Get pairing code</strong> and paste the code here.</p>
+        <div class="row" style="margin-top:10px">
+          <input class="code grow" type="text" id="code" placeholder="RSF-XXXX-XXXX" autocomplete="off" spellcheck="false" maxlength="14" />
+          <button class="btn primary" id="btn-pair">Connect</button>
+        </div>
+        <div id="pair-error" class="notice err hidden"></div>
+        <div id="pair-origin" class="notice warn hidden">
+          This extension is not allowed to reach <span id="pair-origin-host"></span> yet.
+          <div style="margin-top:6px"><button class="btn" id="btn-grant-origin">Allow access</button></div>
+        </div>
+        <div class="hint">Connecting to <span id="app-host">resurfly.com</span> · <a href="#" id="link-change-url">change</a></div>
+      </div>
+      <div class="hint" style="margin-top:10px">Nothing is read from Instagram until you pair. The code expires after 5 minutes.</div>
+    </div>
+
+    <!-- paired -->
+    <div id="view-paired" class="hidden">
+      <div class="card">
+        <div class="status" id="status"><span class="dot"></span><span id="status-text">Ready</span></div>
+        <div style="margin-top:10px">
+          <div class="stat"><span class="k">Last sync</span><span class="v" id="stat-last">—</span></div>
+          <div class="stat"><span class="k">New last time</span><span class="v" id="stat-new">—</span></div>
+          <div class="stat"><span class="k">In your library</span><span class="v" id="stat-total">—</span></div>
+        </div>
+        <div id="notice" class="notice hidden"></div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn primary grow" id="btn-sync"><span id="sync-label">Sync now</span></button>
+          <a class="btn quiet" id="link-open" href="#" target="_blank" rel="noopener">Open Resurfly</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <label class="toggle" id="toggle-wrap">
+          <input type="checkbox" id="toggle-server" />
+          <span class="track"></span>
+          <span class="grow">
+            <div class="label">Also harvest when my browser is closed</div>
+            <div class="sub">Sends your Instagram session (three cookies) to Resurfly, stored encrypted, used only to read your saved posts every 12 h. Turn off any time — the session is deleted right away.</div>
+          </span>
+        </label>
+        <div id="server-notice" class="notice hidden"></div>
+      </div>
+
+      <div class="foot">
+        <span id="device-name"></span>
+        <span><a href="#" id="link-options">Options</a><span class="sep">·</span><span id="version"></span></span>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
