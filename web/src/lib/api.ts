@@ -1,4 +1,4 @@
-/* Thin fetch wrapper for the Resurface API */
+/* Thin fetch wrapper for the Undig API */
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }

@@ -18,7 +18,7 @@ const app = createApp();
 if (config.autoStartWorker) worker.start();
 
 serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
-  console.log(`\n  Resurface server → http://${info.address === '0.0.0.0' ? 'localhost' : info.address}:${info.port}`);
+  console.log(`\n  Undig server → http://${info.address === '0.0.0.0' ? 'localhost' : info.address}:${info.port}`);
   console.log(`  data dir: ${config.dataDir}`);
   console.log(`  openai:   ${hasOpenAI() ? 'configured' : 'NOT configured (set OPENAI_API_KEY)'}`);
   console.log(`  ffmpeg:   ${ffmpegPath()}`);

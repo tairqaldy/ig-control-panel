@@ -1,21 +1,21 @@
 # Instagram DM automations ("ManyChat-lite") — setup guide
 
-Resurface ships a small rules engine on top of Meta's official **Instagram API with Instagram Login**:
+Undig ships a small rules engine on top of Meta's official **Instagram API with Instagram Login**:
 
 - **Comment → DM**: someone comments a keyword on your post → they get a private DM (and optionally a public reply).
 - **DM keyword auto-reply**: someone DMs a keyword → auto-reply (with a link).
 - **Story reply responder**: someone replies to your story with a keyword → auto-reply.
 - Catch-all rules, per-person cooldowns, priorities, `{{username}}` templating, a dry-run tester and an activity log.
 
-It runs inside your Resurface server: no third-party bot platform, no monthly fee, your data stays on your volume.
+It runs inside your Undig server: no third-party bot platform, no monthly fee, your data stays on your volume.
 
-> Requirements: an Instagram **Professional** account (Business or Creator — switch in Instagram settings, it's free), a Meta developer account, and your Resurface instance reachable over public HTTPS (Railway gives you that).
+> Requirements: an Instagram **Professional** account (Business or Creator — switch in Instagram settings, it's free), a Meta developer account, and your Undig instance reachable over public HTTPS (Railway gives you that).
 
 Time: ~15 minutes. Everything below happens at **https://developers.facebook.com/apps**.
 
 ## 1. Create the Meta app
 
-1. **Create App** → type **Business**. Name it anything (e.g. `Resurface DM`).
+1. **Create App** → type **Business**. Name it anything (e.g. `Undig DM`).
 2. Use case: **"Manage messaging and content on Instagram"** (filter "All" if you don't see it). Do *not* add Marketing API / Facebook Login use cases — they add review requirements you don't need.
 3. Dashboard → **Add product → Instagram → Set up**.
 
@@ -34,27 +34,27 @@ Also on that page: your **Instagram App ID / Instagram App Secret**. (The *Meta*
 
 **Allow message access:** in the Instagram app → *Settings → Messages and story replies → Message controls → Connected tools → **Allow access to messages** = ON*. Without it, sends fail (`error 200 / 2534041`) and message webhooks never arrive.
 
-## 3. Point the webhook at Resurface
+## 3. Point the webhook at Undig
 
-In Resurface → **Automations** the status card shows your **Webhook URL** — `https://<your-domain>/api/webhooks/instagram` — and whether a **verify token** is set.
+In Undig → **Automations** the status card shows your **Webhook URL** — `https://<your-domain>/api/webhooks/instagram` — and whether a **verify token** is set.
 
-Pick any string as your verify token (e.g. `resurface-verify-abc123`) and set it as `META_VERIFY_TOKEN` (env var) or in **Settings → Instagram automations**. Then in the Meta dashboard, **Configure webhooks**:
+Pick any string as your verify token (e.g. `undig-verify-abc123`) and set it as `META_VERIFY_TOKEN` (env var) or in **Settings → Instagram automations**. Then in the Meta dashboard, **Configure webhooks**:
 
 - Callback URL: your webhook URL
 - Verify token: the same string
-- **Verify and save** — Resurface answers the handshake (you'll see *"Webhook verified by Meta"* in the Automations activity log).
+- **Verify and save** — Undig answers the handshake (you'll see *"Webhook verified by Meta"* in the Automations activity log).
 - Subscribe to fields: **`messages`**, **`comments`** (optionally `messaging_postbacks`, `message_reactions`).
 
-**Required before you paste an access token:** copy the **Meta App Secret** (Settings → Basic → App Secret → Show) into `META_APP_SECRET` so Resurface verifies the `X-Hub-Signature-256` HMAC on every webhook. Resurface fails closed: once an access token is configured, unsigned webhooks are rejected with 401 (and logged) until the secret is set. Without a token *and* without a secret, unsigned events are merely logged (useful for testing the handshake).
+**Required before you paste an access token:** copy the **Meta App Secret** (Settings → Basic → App Secret → Show) into `META_APP_SECRET` so Undig verifies the `X-Hub-Signature-256` HMAC on every webhook. Undig fails closed: once an access token is configured, unsigned webhooks are rejected with 401 (and logged) until the secret is set. Without a token *and* without a secret, unsigned events are merely logged (useful for testing the handshake).
 
-## 4. Give Resurface the credentials
+## 4. Give Undig the credentials
 
 Either as environment variables (Railway → Variables) or in **Settings → Instagram automations**:
 
 | Key | Value |
 |---|---|
 | `IG_ACCESS_TOKEN` | the long-lived token from step 2 |
-| `IG_USER_ID` | your numeric professional account id — get it with `GET https://graph.instagram.com/me?fields=user_id,username&access_token=…` → use **`user_id`** (Resurface's *Test connection* button shows it) |
+| `IG_USER_ID` | your numeric professional account id — get it with `GET https://graph.instagram.com/me?fields=user_id,username&access_token=…` → use **`user_id`** (Undig's *Test connection* button shows it) |
 | `META_VERIFY_TOKEN` | the string you chose |
 | `META_APP_SECRET` | Meta App Secret (required as soon as a token is set — see step 3) |
 | `GRAPH_API_VERSION` | optional, default `v23.0` |
@@ -83,7 +83,7 @@ Then comment your keyword on one of your own posts from another account (or ask 
 - **24-hour window:** you can DM someone only within 24h of their last message to you (comments/private replies open that window). Human-agent tag (7 days) needs App Review — not used here.
 - **Private replies:** one per comment, within 7 days, only on your own media (comments on ads/other people's posts don't work). Rate: 750/hour.
 - **Tokens expire after 60 days.** Refresh with `GET https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=<TOKEN>` (works when the token is >24h old) or generate a new one in the dashboard and paste it in Settings.
-- Your own outbound messages arrive as webhooks with `is_echo: true` — Resurface ignores them (no loops). Meta retries deliveries for up to 36h; Resurface dedupes on message/comment id.
+- Your own outbound messages arrive as webhooks with `is_echo: true` — Undig ignores them (no loops). Meta retries deliveries for up to 36h; Undig dedupes on message/comment id.
 - Error `10`: outside the 24h window · `190`: token expired · `368`: temporarily blocked for policy · `613/80002`: rate limit · `508`: link not allowed. They show up in the Activity log.
 
 ## Why not chatmany?

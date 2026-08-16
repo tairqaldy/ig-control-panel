@@ -130,11 +130,11 @@ export function ItemModal() {
               <button onClick={() => reanalyze.mutate(false)} disabled={reanalyze.isPending} className="btn"><RefreshCw size={14} className={cn(reanalyze.isPending && 'animate-spin')} /> Re-analyze</button>
               <button onClick={() => reanalyze.mutate(true)} disabled={reanalyze.isPending} className="btn" title="Re-download media (frames, transcript) then re-analyze"><Wand2 size={14} /> Redo media + analysis</button>
               <button onClick={() => patch.mutate({ archived: !item.archived }, { onSuccess: () => { toast.success(item.archived ? 'Restored' : 'Archived'); if (!item.archived) modal.close(); } })} className="btn"><Archive size={14} />{item.archived ? 'Unarchive' : 'Archive'}</button>
-              <button onClick={() => patch.mutate({ excluded: !item.excluded }, { onSuccess: () => { toast.success(item.excluded ? 'Included again' : 'Excluded — hidden everywhere, never analyzed'); if (!item.excluded) modal.close(); } })} className={cn('btn', item.excluded && 'chip-active border-accent')} title="Exclude from Resurface entirely (not analyzed, not searchable, not in the graph). Reversible from Library → Excluded.">{item.excluded ? <Eye size={14} /> : <EyeOff size={14} />}{item.excluded ? 'Include again' : 'Exclude'}</button>
+              <button onClick={() => patch.mutate({ excluded: !item.excluded }, { onSuccess: () => { toast.success(item.excluded ? 'Included again' : 'Excluded — hidden everywhere, never analyzed'); if (!item.excluded) modal.close(); } })} className={cn('btn', item.excluded && 'chip-active border-accent')} title="Exclude from Undig entirely (not analyzed, not searchable, not in the graph). Reversible from Library → Excluded.">{item.excluded ? <Eye size={14} /> : <EyeOff size={14} />}{item.excluded ? 'Include again' : 'Exclude'}</button>
               {item.author && !item.excluded && (
-                <button onClick={() => { if (confirm(`Exclude ALL saves by @${item.author} from Resurface? (reversible)`)) excludeAuthor.mutate(item.author!); }} className="btn col-span-2"><UserX size={14} /> Exclude everything by @{item.author}</button>
+                <button onClick={() => { if (confirm(`Exclude ALL saves by @${item.author} from Undig? (reversible)`)) excludeAuthor.mutate(item.author!); }} className="btn col-span-2"><UserX size={14} /> Exclude everything by @{item.author}</button>
               )}
-              <button onClick={() => { if (confirm('Delete this save from Resurface? (Does not touch Instagram)')) del.mutate(); }} className="btn btn-danger col-span-2"><Trash2 size={14} /> Delete</button>
+              <button onClick={() => { if (confirm('Delete this save from Undig? (Does not touch Instagram)')) del.mutate(); }} className="btn btn-danger col-span-2"><Trash2 size={14} /> Delete</button>
             </div>
           </div>
 

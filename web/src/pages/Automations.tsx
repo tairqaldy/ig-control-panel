@@ -87,33 +87,64 @@ export default function Automations() {
     <div>
       <PageHeader eyebrow="Automations · ManyChat-lite" title={<>Instagram DM <em className="text-accent not-italic">autopilot</em></>} subtitle="Keyword auto-replies, comment-to-DM funnels and story-reply responders on Meta’s official Instagram Messaging API. Runs inside this app — no third-party bot platform, no monthly fee." actions={<button onClick={() => setEditing({ ...EMPTY })} className="btn btn-primary"><Plus size={14} /> New rule</button>} />
 
-      {/* Connection status */}
-      <div className={cn('card p-5 mb-6 grid md:grid-cols-[1fr_auto] gap-4', s && !s.configured && 'border-warn/40')}>
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            {s?.configured ? <CheckCircle2 size={16} className="text-accent" /> : <XCircle size={16} className="text-warn" />}
-            <span className="text-[14px] font-medium">{s?.configured ? 'Connected to the Instagram API' : 'Not connected yet'}</span>
-            {s?.igUserId && <span className="font-mono text-[11px] text-muted">IG user id {s.igUserId}</span>}
+      {/* Connection: a checklist that tells you exactly where you are */}
+      {(() => {
+        const steps = [
+          { ok: !!s?.verifyTokenSet, label: 'Verify token set', hint: 'Settings → Instagram automations (any string you choose)' },
+          { ok: !!s?.accessTokenSet, label: 'Access token pasted', hint: 'Meta app → Instagram → API setup → Generate token' },
+          { ok: !!s?.igUserId, label: 'Instagram user id set', hint: 'from GET /me?fields=user_id — "Test connection" fills it in' },
+          { ok: !!s?.appSecretSet, label: 'App secret set (signed webhooks)', hint: 'Meta app → Settings → Basic → App Secret' },
+          { ok: !!s?.configured && (s?.events24h ?? 0) > 0, label: 'Webhook receiving events', hint: 'Meta app → Configure webhooks → Verify and save, subscribe messages + comments; app in Live mode' },
+        ];
+        const done = steps.filter((x) => x.ok).length;
+        return (
+          <div className={cn('card p-5 mb-6', s && !s.configured && 'border-warn/40')}>
+            <div className="flex flex-wrap items-start gap-4">
+              <div className="min-w-[260px] flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  {s?.configured ? <CheckCircle2 size={16} className="text-accent" /> : <XCircle size={16} className="text-warn" />}
+                  <span className="text-[14px] font-medium">{s?.configured ? 'Connected to the Instagram API' : `Setup ${done}/${steps.length}`}</span>
+                  {s?.igUserId && <span className="font-mono text-[11px] text-muted">IG user id {s.igUserId}</span>}
+                </div>
+                <div className="text-[12.5px] text-muted leading-relaxed mb-3">
+                  {s?.configured ? 'Your rules run on incoming DMs, story replies and comments. Keep the Meta app in Live mode so events from real people arrive.' : <>~15 minutes, once. The full walkthrough with screenshots-in-words is in <a className="text-accent underline" href="https://github.com/tairqaldy/ig-control-panel/blob/main/docs/AUTOMATIONS.md" target="_blank" rel="noreferrer">docs/AUTOMATIONS.md</a>.</>}
+                </div>
+                <ol className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                  {steps.map((st, i) => (
+                    <li key={i} className="flex items-start gap-2 text-[12.5px]">
+                      <span className={cn('mt-0.5 h-4 w-4 shrink-0 rounded-full grid place-items-center border', st.ok ? 'bg-accent border-accent text-accent-ink' : 'border-line-2 text-muted')}>{st.ok ? <CheckCircle2 size={11} /> : <span className="font-mono text-[9px]">{i + 1}</span>}</span>
+                      <span><span className={cn(st.ok ? 'text-ink' : 'text-ink-2')}>{st.label}</span><span className="block text-[11px] text-muted">{st.hint}</span></span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+              <div className="flex flex-col gap-2 min-w-[220px]">
+                <div className="card-flat p-3 text-[12px]">
+                  <div className="eyebrow mb-1">Webhook URL</div>
+                  <div className="flex items-center gap-1"><code className="font-mono text-[11px] truncate flex-1">{s?.webhookUrl}</code><button onClick={() => { copyText(s?.webhookUrl || ''); toast.success('Webhook URL copied'); }} className="btn btn-ghost btn-sm !px-1"><Copy size={12} /></button></div>
+                </div>
+                <button onClick={() => whoami.mutate()} disabled={!s?.accessTokenSet} className="btn btn-sm"><RefreshCw size={13} className={cn(whoami.isPending && 'animate-spin')} /> Test connection</button>
+                <a href="/settings#automations" className="btn btn-sm">Enter credentials <ArrowRight size={13} /></a>
+                <a href="https://developers.facebook.com/apps" target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm text-muted"><ExternalLink size={12} /> Meta for Developers</a>
+              </div>
+            </div>
           </div>
-          <div className="text-[12.5px] text-muted leading-relaxed">
-            {s?.configured ? 'Webhook events will be processed by your rules. Keep the app in Live mode in the Meta dashboard so events for real users arrive.' : <>Follow <a className="text-accent underline" href="https://github.com/tairqaldy/ig-control-panel/blob/main/docs/AUTOMATIONS.md" target="_blank" rel="noreferrer">docs/AUTOMATIONS.md</a> (≈15 min): create a Meta app → add Instagram → generate a token → set the webhook below → paste the credentials in Settings.</>}
-          </div>
-          <div className="mt-3 grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-[12.5px]">
-            <div className="flex items-center gap-2"><span className="text-muted w-28">Webhook URL</span><code className="font-mono text-[11.5px] truncate">{s?.webhookUrl}</code><button onClick={() => { copyText(s?.webhookUrl || ''); toast.success('Copied'); }} className="btn btn-ghost btn-sm !px-1"><Copy size={12} /></button></div>
-            <div className="flex items-center gap-2"><span className="text-muted w-28">Verify token</span>{s?.verifyTokenSet ? <span className="text-accent">set</span> : <span className="text-warn">missing</span>}</div>
-            <div className="flex items-center gap-2"><span className="text-muted w-28">App secret</span>{s?.appSecretSet ? <span className="text-accent">set (signatures verified)</span> : <span className="text-warn">missing (signatures not verified)</span>}</div>
-            <div className="flex items-center gap-2"><span className="text-muted w-28">Access token</span>{s?.accessTokenSet ? <span className="text-accent">set</span> : <span className="text-warn">missing</span>}</div>
-          </div>
-        </div>
-        <div className="flex md:flex-col gap-2 md:items-end">
-          <button onClick={() => whoami.mutate()} disabled={!s?.accessTokenSet} className="btn btn-sm"><RefreshCw size={13} className={cn(whoami.isPending && 'animate-spin')} /> Test connection</button>
-          <a href="/settings#automations" className="btn btn-sm">Credentials <ArrowRight size={13} /></a>
-          <a href="https://developers.facebook.com/apps" target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm text-muted"><ExternalLink size={12} /> Meta dashboard</a>
-        </div>
-      </div>
+        );
+      })()}
 
       <div className="mb-4"><Tabs value={tab} onChange={setTab} tabs={[{ id: 'rules', label: `Rules (${rules.data?.rules.length ?? 0})` }, { id: 'test', label: <span className="inline-flex items-center gap-1.5"><FlaskConical size={13} /> Test</span> }, { id: 'log', label: `Activity (${s?.events24h ?? 0} today)` }]} /></div>
 
+      {tab === 'rules' && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {[
+            { name: 'Comment LINK → send link', trigger_type: 'comment_keyword', keywordsText: 'link, send, want', reply_text: 'Hey {{username}}! Here’s the link you asked for 👇', public_reply_text: 'Sent you a DM ✉️', desc: 'The classic lead magnet funnel' },
+            { name: 'DM keyword → resource', trigger_type: 'dm_keyword', keywordsText: 'guide, template, checklist', reply_text: 'Here you go — the resource you asked for 👇', desc: 'Auto-reply to keyword DMs' },
+            { name: 'Story reply → thanks + link', trigger_type: 'story_reply', keywordsText: 'yes, me, info', reply_text: 'Thanks for replying to my story! Here’s the thing I mentioned 👇', desc: 'Story engagement responder' },
+          ].map((t) => (
+            <button key={t.name} onClick={() => setEditing({ ...EMPTY, ...t })} className="card px-3 py-2 text-left hover:border-line-2 transition-colors"><div className="text-[12.5px] font-medium inline-flex items-center gap-1.5"><Zap size={12} className="text-accent" />{t.name}</div><div className="text-[11px] text-muted">{t.desc}</div></button>
+          ))}
+        </div>
+      )}
       {tab === 'rules' && (
         rules.data && rules.data.rules.length ? (
           <div className="space-y-2">

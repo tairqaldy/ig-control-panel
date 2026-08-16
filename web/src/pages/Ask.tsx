@@ -22,6 +22,29 @@ const STARTERS = [
 
 const STORAGE = 'rs-ask-history';
 
+/** Questions about the product itself are answered locally (free, instant) — this doubles as onboarding. */
+const GUIDE = `**Undig turns your Instagram saves into a searchable second brain.** Here's the tour:
+
+- **Library** — every save with an AI title, one-liner, summary, key points, tags, category, hook analysis and transcript. Filter by category/tag/creator/format, search by keyword *and* meaning, favorite, add notes, exclude what you don't want. Export to JSON/CSV/Markdown/Obsidian.
+- **Ask** (this page) — ask anything in plain language; I answer only from your saves and cite them as clickable chips.
+- **Resurface** — three saves worth a second look every day, chosen from the depths of your library.
+- **Graph** — an interactive map of your taste: saves ↔ tags ↔ creators ↔ categories, with similarity links.
+- **Import** — the harvester runs in your browser on instagram.com and brings *all* your saves in; the Analysis plan controls what gets analyzed and what it costs.
+- **Automations** — comment→DM and keyword auto-replies for your own Instagram account on Meta's official API.
+
+Try: "What did I save about X?", "Compare the approaches to Y in my saves", "Give me a step-by-step plan from my saved Z advice", or "Which creators do I save most and why?"
+
+Try next:
+- What are the recurring themes across everything I saved?
+- Which tools did I save the most, and what were they for?
+- Show me my most useful saves from the last month`;
+
+function localAnswer(q: string): string | null {
+  const s = q.trim().toLowerCase();
+  if (/^(hi|hello|hey|yo|help|start|guide|tour)\b/.test(s) || /(what (can|do) (you|u|this|undig|the app|this app|this platform)|how (does|do) (this|undig|it) work|what is (this|undig)|what('s| is) this (for|about)|how to use|onboard)/.test(s)) return GUIDE;
+  return null;
+}
+
 /** Render markdown-ish text with [#id] citations turned into chips. Minimal, safe (no HTML injection). */
 function Answer({ text, sources, onCite }: { text: string; sources: AskSource[]; onCite: (id: string) => void }) {
   const byId = useMemo(() => new Map(sources.map((s) => [s.id, s])), [sources]);
@@ -100,6 +123,8 @@ export default function Ask() {
     const qn = question.trim();
     if (!qn || busy) return;
     setInput('');
+    const local = localAnswer(qn);
+    if (local) { setTurns((t) => [...t, { role: 'user', content: qn }, { role: 'assistant', content: local, sources: [] }]); return; }
     const history = turns.filter((t) => !t.error).slice(-6).map((t) => ({ role: t.role, content: t.content }));
     setTurns((t) => [...t, { role: 'user', content: qn }, { role: 'assistant', content: '', streaming: true, sources: [] }]);
     setBusy(true);
@@ -139,12 +164,24 @@ export default function Ask() {
 
       <div className="flex-1">
         {turns.length === 0 ? (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 rise">
-            {STARTERS.map((s) => (
-              <button key={s} onClick={() => ask(s)} className="card p-4 text-left text-[13.5px] hover:border-line-2 hover:-translate-y-0.5 transition-all">
-                <Sparkles size={14} className="text-accent mb-2" />{s}
-              </button>
-            ))}
+          <div className="rise">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {STARTERS.map((s) => (
+                <button key={s} onClick={() => ask(s)} className="card p-4 text-left text-[13.5px] hover:border-line-2 hover:-translate-y-0.5 transition-all">
+                  <Sparkles size={14} className="text-accent mb-2" />{s}
+                </button>
+              ))}
+            </div>
+            <div className="mt-6 grid md:grid-cols-[1.2fr_1fr] gap-4">
+              <div className="card-flat p-5">
+                <div className="eyebrow mb-2">New here?</div>
+                <div className="text-[14px] leading-relaxed text-ink-2">Ask me <button onClick={() => ask('What can Undig do?')} className="text-accent underline underline-offset-2">what Undig can do</button> — a free, instant tour. Then ask about your library the way you'd ask a friend who watched every reel you ever saved: “what did I save about cold email?”, “which AI tools show up most?”, “plan my week from my saved productivity advice”.</div>
+              </div>
+              <div className="card-flat p-5 text-[13px] text-muted leading-relaxed">
+                <div className="eyebrow mb-2">How answers work</div>
+                Meaning + keyword search picks the 12 most relevant saves → the model answers only from those and cites them as <span className="cite !cursor-default">#1</span> chips → click a chip to open the save. Nothing outside your library is used.
+              </div>
+            </div>
           </div>
         ) : (
           <div className="space-y-6 pb-32">

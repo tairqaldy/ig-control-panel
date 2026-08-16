@@ -107,16 +107,16 @@ misc.get('/export', async (c) => {
   const items = rows.map((r) => toExportItem(r, base));
   const stamp = new Date().toISOString().slice(0, 10);
   if (format === 'csv') {
-    return c.body(toCsv(items), 200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="resurface-${stamp}.csv"` });
+    return c.body(toCsv(items), 200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="undig-${stamp}.csv"` });
   }
   if (format === 'md' || format === 'markdown') {
-    return c.body(toMarkdownDigest(items), 200, { 'content-type': 'text/markdown; charset=utf-8', 'content-disposition': `attachment; filename="resurface-${stamp}.md"` });
+    return c.body(toMarkdownDigest(items), 200, { 'content-type': 'text/markdown; charset=utf-8', 'content-disposition': `attachment; filename="undig-${stamp}.md"` });
   }
   if (format === 'obsidian') {
     const zip = toObsidianZip(items);
-    return c.body(new Uint8Array(zip), 200, { 'content-type': 'application/zip', 'content-disposition': `attachment; filename="resurface-obsidian-${stamp}.zip"` });
+    return c.body(new Uint8Array(zip), 200, { 'content-type': 'application/zip', 'content-disposition': `attachment; filename="undig-obsidian-${stamp}.zip"` });
   }
-  return c.body(JSON.stringify({ exported_at: new Date().toISOString(), count: items.length, items }, null, 2), 200, { 'content-type': 'application/json; charset=utf-8', 'content-disposition': `attachment; filename="resurface-${stamp}.json"` });
+  return c.body(JSON.stringify({ exported_at: new Date().toISOString(), count: items.length, items }, null, 2), 200, { 'content-type': 'application/json; charset=utf-8', 'content-disposition': `attachment; filename="undig-${stamp}.json"` });
 });
 
 /* ---------------- ask (killer feature) ---------------- */
@@ -141,7 +141,7 @@ misc.post('/ask', async (c) => {
   });
 });
 
-/* ---------------- resurface ---------------- */
+/* ---------------- undig ---------------- */
 misc.get('/resurface', async (c) => {
   const n = Math.min(6, Math.max(1, Number(c.req.query('n') || 3)));
   const dateKey = todayKey();

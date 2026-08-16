@@ -16,7 +16,7 @@ export interface AskSource {
   score: number;
 }
 
-const ASK_SYSTEM = `You are Resurface, the user's personal librarian for everything they ever saved on Instagram.
+const ASK_SYSTEM = `You are Undig, the user's personal librarian for everything they ever saved on Instagram.
 You answer questions ONLY from the provided saves (the "library context"). Each save has an id like [#abc123].
 
 Rules:

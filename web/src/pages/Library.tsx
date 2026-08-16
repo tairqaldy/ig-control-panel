@@ -156,10 +156,10 @@ export default function Library() {
             {get('excluded') ? (
               <button onClick={() => bulk.mutate({ action: 'include' })} className="btn btn-sm"><Eye size={13} /> Include again</button>
             ) : (
-              <button onClick={() => bulk.mutate({ action: 'exclude' })} className="btn btn-sm" title="Exclude from Resurface: never analyzed, hidden from library/search/graph. Undo from the Excluded filter."><EyeOff size={13} /> Exclude</button>
+              <button onClick={() => bulk.mutate({ action: 'exclude' })} className="btn btn-sm" title="Exclude from Undig: never analyzed, hidden from library/search/graph. Undo from the Excluded filter."><EyeOff size={13} /> Exclude</button>
             )}
             <button onClick={() => bulk.mutate({ action: get('archived') ? 'unarchive' : 'archive' })} className="btn btn-sm"><Archive size={13} /> {get('archived') ? 'Restore' : 'Archive'}</button>
-            <button onClick={() => { if (confirm(`Delete ${selected.size} saves from Resurface?`)) bulk.mutate({ action: 'delete' }); }} className="btn btn-sm btn-danger"><Trash2 size={13} /></button>
+            <button onClick={() => { if (confirm(`Delete ${selected.size} saves from Undig?`)) bulk.mutate({ action: 'delete' }); }} className="btn btn-sm btn-danger"><Trash2 size={13} /></button>
             <button onClick={() => setSelected(new Set())} className="btn btn-ghost btn-sm"><X size={13} /></button>
           </motion.div>
         )}

@@ -57,7 +57,7 @@ export default function Resurface() {
       ) : q.data && q.data.items.length ? (
         <div className="space-y-4">{q.data.items.map((it, i) => <BigCard key={it.id} item={it} i={i} />)}</div>
       ) : (
-        <Empty icon={<Heart size={26} />} title="Nothing to resurface yet" body="Once a handful of saves are analyzed, this page will pick three every day." action={<button onClick={() => qc.invalidateQueries({ queryKey: ['resurface'] })} className="btn">Refresh</button>} />
+        <Empty icon={<Heart size={26} />} title="Nothing to undig yet" body="Once a handful of saves are analyzed, this page will pick three every day." action={<button onClick={() => qc.invalidateQueries({ queryKey: ['resurface'] })} className="btn">Refresh</button>} />
       )}
     </div>
   );

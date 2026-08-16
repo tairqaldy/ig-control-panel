@@ -21,7 +21,7 @@ export default function Login() {
     <div className="relative z-[1] min-h-full grid lg:grid-cols-[1.1fr_1fr]">
       {/* Left: manifesto */}
       <div className="hidden lg:flex flex-col justify-between p-12 border-r border-line/70">
-        <div className="flex items-center gap-3"><Logo size={28} /><span className="display text-[24px]">Resurface</span></div>
+        <div className="flex items-center gap-3"><Logo size={28} /><span className="display text-[24px]">Undig</span></div>
         <div className="max-w-xl">
           <motion.h1 initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.2, 0.7, 0.2, 1] }} className="display text-[64px] leading-[0.98] tracking-tight">
             Your saved posts are a <em className="text-accent not-italic">graveyard</em>.<br />Dig them up.
@@ -40,7 +40,7 @@ export default function Login() {
       {/* Right: form */}
       <div className="flex items-center justify-center p-6">
         <motion.form onSubmit={submit} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, duration: 0.5 }} className="w-full max-w-sm card p-7">
-          <div className="lg:hidden flex items-center gap-2.5 mb-6"><Logo size={24} /><span className="display text-[22px]">Resurface</span></div>
+          <div className="lg:hidden flex items-center gap-2.5 mb-6"><Logo size={24} /><span className="display text-[22px]">Undig</span></div>
           <div className="eyebrow mb-1">Welcome back</div>
           <h2 className="display text-[28px] mb-6">Unlock your library</h2>
           {!auth.loginEnabled && (

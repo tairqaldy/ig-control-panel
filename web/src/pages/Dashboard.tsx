@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
 import { motion } from 'motion/react';
@@ -43,11 +44,46 @@ function Timeline({ rows }: { rows: Array<{ month: string; n: number }> }) {
   );
 }
 
+const HERO_PROMPTS = [
+  'What did I save about growing on Instagram?',
+  'Give me the best AI tools from my saves',
+  'Summarize the recurring themes in my library',
+  'Which saved recipes can I cook tonight?',
+  'What hooks do the reels I saved use?',
+];
+
+/** Big centered composer: the first thing you see. Submitting hands the question to /ask. */
+function AskHero({ total, analyzed }: { total: number; analyzed: number }) {
+  const nav = useNavigate();
+  const [q, setQ] = useState('');
+  const go = (question: string) => { const t = question.trim(); if (t) nav(`/ask?q=${encodeURIComponent(t)}`); };
+  return (
+    <section className="relative mb-8 rise">
+      <div className="mx-auto max-w-3xl text-center pt-4 pb-6">
+        <div className="eyebrow mb-3">Ask your saves</div>
+        <h1 className="display text-[40px] sm:text-[52px] leading-[1.02] tracking-tight">What did you save about…</h1>
+        <p className="mt-3 text-[14.5px] text-muted max-w-xl mx-auto">Everything you ever saved on Instagram, transcribed and structured. Ask in plain language — answers cite the exact saves.</p>
+      </div>
+      <form onSubmit={(e) => { e.preventDefault(); go(q); }} className="mx-auto max-w-2xl">
+        <div className="flex items-center gap-2 rounded-2xl border border-line bg-surface p-2 pl-4 focus-within:border-accent focus-within:ring-4 focus-within:ring-accent/10 transition-all" style={{ boxShadow: 'var(--shadow-lg)' }}>
+          <MessageSquareText size={18} className="text-muted shrink-0" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} autoFocus placeholder="e.g. what were the cold-email tips I saved last month?" className="flex-1 bg-transparent py-2.5 text-[15px] outline-none placeholder:text-muted-2" />
+          <button type="submit" disabled={!q.trim()} className="btn btn-primary !rounded-xl px-4">Ask <ArrowRight size={14} /></button>
+        </div>
+        <div className="mt-3 flex flex-wrap justify-center gap-1.5">
+          {HERO_PROMPTS.map((p) => <button key={p} type="button" onClick={() => go(p)} className="chip hover:border-accent hover:text-accent">{p}</button>)}
+        </div>
+        <div className="mt-3 text-center text-[11.5px] text-muted">{analyzed.toLocaleString()} of {total.toLocaleString()} saves analyzed and searchable · <Link to="/library" className="underline hover:text-ink">browse the library</Link> · <Link to="/graph" className="underline hover:text-ink">explore the graph</Link></div>
+      </form>
+    </section>
+  );
+}
+
 export default function Dashboard() {
   const auth = useAuth();
   const nav = useNavigate();
   const stats = useQuery({ queryKey: ['stats'], queryFn: () => api.get<Stats>('/api/stats'), refetchInterval: 15000 });
-  const resurface = useQuery({ queryKey: ['resurface'], queryFn: () => api.get<{ date: string; items: ItemLight[] }>('/api/resurface?n=3'), staleTime: 5 * 60_000 });
+  const undig = useQuery({ queryKey: ['resurface'], queryFn: () => api.get<{ date: string; items: ItemLight[] }>('/api/resurface?n=3'), staleTime: 5 * 60_000 });
   const s = stats.data;
   const t = s?.totals;
   const hours = t ? Math.round((t.total_seconds / 3600) * 10) / 10 : 0;
@@ -64,12 +100,11 @@ export default function Dashboard() {
 
   return (
     <div>
-      <PageHeader
-        eyebrow={greeting}
-        title={<>{s?.igUsername ? `@${s.igUsername}` : auth.username}’s inspiration, <em className="text-accent not-italic">resurfaced</em>.</>}
-        subtitle={t ? `${t.total.toLocaleString()} saves · ${t.analyzed.toLocaleString()} analyzed · ${hours}h of video saved · ${t.authors} creators` : undefined}
-        actions={<><Link to="/ask" className="btn btn-primary"><MessageSquareText size={14} /> Ask your saves</Link><Link to="/graph" className="btn"><Waypoints size={14} /> Graph</Link></>}
-      />
+      <div className="flex items-center justify-between text-[12.5px] text-muted mb-2 rise">
+        <span>{greeting}, {s?.igUsername ? `@${s.igUsername}` : auth.username}{t ? ` · ${t.total.toLocaleString()} saves · ${hours}h of video · ${t.authors} creators` : ''}</span>
+        <Link to="/graph" className="btn btn-sm"><Waypoints size={13} /> Graph</Link>
+      </div>
+      <AskHero total={t?.total ?? 0} analyzed={t?.analyzed ?? 0} />
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
@@ -83,17 +118,17 @@ export default function Dashboard() {
         ) : Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24" />)}
       </div>
 
-      {/* Resurface today */}
+      {/* Undig today */}
       <section className="mb-8">
         <div className="flex items-end justify-between mb-3">
           <div><div className="eyebrow mb-1">Resurface · today</div><h2 className="display text-[24px]">Three saves worth a second look</h2></div>
           <Link to="/resurface" className="btn btn-sm">More <ArrowRight size={13} /></Link>
         </div>
-        {resurface.isLoading ? (
+        {undig.isLoading ? (
           <div className="grid sm:grid-cols-3 gap-4">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-72" />)}</div>
-        ) : resurface.data && resurface.data.items.length ? (
+        ) : undig.data && undig.data.items.length ? (
           <div className="grid sm:grid-cols-3 gap-4">
-            {resurface.data.items.map((it, i) => (
+            {undig.data.items.map((it, i) => (
               <motion.div key={it.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 + i * 0.08 }} className="flex flex-col gap-2">
                 <ItemCard item={it} index={i} />
                 {it.why_today && <div className="flex items-start gap-2 px-1 text-[12.5px] text-ink-2 leading-snug"><Sparkles size={13} className="text-accent shrink-0 mt-0.5" /><span>{it.why_today}</span></div>}
