@@ -334,13 +334,17 @@ export async function enrichFromEmbed(shortcode: string): Promise<EmbedInfo | nu
   }
 }
 
-/** Instagram's JSON export encodes non-ASCII as latin-1-escaped UTF-8 ("mojibake"). Fix it. */
+/** Instagram's JSON export encodes non-ASCII as latin-1-escaped UTF-8 ("mojibake"). Fix it (also tolerates cp1252-rendered variants). */
+const CP1252 = '\u20ac\u0081\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152\u008d\u017d\u008f\u0090\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u009d\u017e\u0178';
 export function fixMojibake(s: string | undefined | null): string | undefined {
   if (!s) return s ?? undefined;
+  // normalize cp1252-rendered bytes (\u20ac \u201a \u0192 \u2026 \u2018 \u2019 \u201c \u201d \u2022 \u2013 \u2014 \u2122 etc.) back to their 0x80-0x9F byte values
+  let t = '';
+  for (const ch of s) { const i = CP1252.indexOf(ch); t += i >= 0 && ch.charCodeAt(0) > 0xff ? String.fromCharCode(0x80 + i) : ch; }
   // if there are chars in 0x80-0xFF and none above 0xFF, it's very likely mojibake
-  if (/[\u0080-\u00ff]/.test(s) && !/[\u0100-\uffff]/.test(s)) {
+  if (/[\u0080-\u00ff]/.test(t) && !/[\u0100-\uffff]/.test(t)) {
     try {
-      const fixed = Buffer.from(s, 'latin1').toString('utf8');
+      const fixed = Buffer.from(t, 'latin1').toString('utf8');
       if (!fixed.includes('\uFFFD')) return fixed;
     } catch {}
   }

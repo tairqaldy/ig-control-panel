@@ -20,6 +20,9 @@
   const APP_ID = '936619743392459';
   const VERSION = 1;
   const RESURFACE_URL = '__RESURFACE_URL__';
+  // Optional: a private 24h upload token embedded by your dashboard's Import page (enables "Send to Resurface").
+  const RESURFACE_TOKEN = '__RESURFACE_TOKEN__';
+  const CAN_SEND = RESURFACE_URL.startsWith('http') && RESURFACE_TOKEN && !RESURFACE_TOKEN.startsWith('__');
   const PANEL_ID = 'resurface-harvester';
 
   if (!/(^|\.)instagram\.com$/.test(location.hostname)) {
@@ -57,9 +60,16 @@
   panel.append(opts);
   const btns = mk('div', 'display:flex;gap:8px;');
   const btn = (label, primary) => mk('button', `flex:1;border-radius:10px;padding:8px 10px;font-weight:600;font-size:13px;cursor:pointer;border:1px solid ${primary ? '#4fd39a' : '#3a3935'};background:${primary ? '#4fd39a' : 'transparent'};color:${primary ? '#141412' : '#f2efe8'};`, label);
-  const startBtn = btn('Start', true); const stopBtn = btn('Stop & download', false); const dlBtn = btn('Download JSON', false);
+  const startBtn = btn('Start', true); const stopBtn = btn('Stop', false); const dlBtn = btn('Download JSON', false);
   stopBtn.disabled = true; dlBtn.disabled = true; css(stopBtn, stopBtn.style.cssText + 'opacity:.5;'); css(dlBtn, dlBtn.style.cssText + 'opacity:.5;');
   btns.append(startBtn, stopBtn, dlBtn); panel.append(btns);
+  let sendBtn = null;
+  if (CAN_SEND) {
+    sendBtn = btn('Send to Resurface', true);
+    css(sendBtn, sendBtn.style.cssText + 'margin-top:8px;width:100%;opacity:.5;');
+    sendBtn.disabled = true;
+    panel.append(sendBtn);
+  }
   const foot = mk('div', 'margin-top:8px;color:#6f6c65;font-size:11px;', 'Keep this tab open while it runs. ~1 request/second to stay polite.');
   panel.append(foot);
   document.body.appendChild(panel);
@@ -241,9 +251,36 @@
       setStatus(`Error: ${e && e.message ? e.message : e}\n${items.length ? `${items.length} saves collected so far - you can still download them.` : ''}`);
     }
     enable(startBtn, true); enable(stopBtn, false); enable(dlBtn, items.length > 0);
+    if (sendBtn) enable(sendBtn, items.length > 0);
     window.__resurfaceHarvest = buildPayload();
     window.__resurfaceDone = true;
-    if (items.length && !stopFlag) download();
+    if (items.length && !stopFlag) {
+      if (CAN_SEND) setStatus(`Done! ${items.length} saves collected. Click "Send to Resurface" (opens a new tab) or "Download JSON".`);
+      else download();
+    }
+  }
+
+  /** Cross-site form POST straight into your dashboard (opens a small result tab). Works despite instagram.com's CSP because it's a normal navigation, not fetch(). */
+  function sendToResurface() {
+    const payload = buildPayload();
+    const form = document.createElement('form');
+    form.method = 'POST'; form.enctype = 'multipart/form-data'; form.action = RESURFACE_URL + '/api/import/harvest-form'; form.target = '_blank';
+    css(form, 'display:none');
+    const tok = document.createElement('input'); tok.type = 'hidden'; tok.name = 'token'; tok.value = RESURFACE_TOKEN; form.append(tok);
+    const fileInput = document.createElement('input'); fileInput.type = 'file'; fileInput.name = 'file';
+    try {
+      const dt = new DataTransfer();
+      dt.items.add(new File([JSON.stringify(payload)], 'resurface-harvest.json', { type: 'application/json' }));
+      fileInput.files = dt.files;
+    } catch (e) {
+      setStatus('Your browser blocked the direct upload - use "Download JSON" and upload it on the Import page.');
+      return;
+    }
+    form.append(fileInput);
+    document.body.appendChild(form);
+    form.submit();
+    setTimeout(() => form.remove(), 5000);
+    setStatus(`Sent ${items.length} saves to Resurface (check the new tab). You can also Download JSON as a backup.`);
   }
 
   function buildPayload() {
@@ -265,6 +302,7 @@
 
   window.__resurfaceStart = harvest;
   startBtn.onclick = harvest;
-  stopBtn.onclick = () => { stopFlag = true; setStatus('Stopping after the current page...'); };
+  stopBtn.onclick = () => { stopFlag = true; setStatus('Stopping after the current page... (click Start later to resume)'); };
   dlBtn.onclick = download;
+  if (sendBtn) sendBtn.onclick = sendToResurface;
 })();

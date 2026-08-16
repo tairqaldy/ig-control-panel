@@ -63,7 +63,7 @@ Click **Test connection** on the Automations page — it calls `/me` and should 
 
 ## 5. Go Live
 
-Top of the Meta dashboard: switch the app from **Development** to **Live** (it asks for a Privacy Policy URL under Settings → Basic — any public page describing that you only process your own account's messages is fine).
+Top of the Meta dashboard: switch the app from **Development** to **Live** (it asks for a Privacy Policy URL under Settings → Basic — you can use this repo's [docs/PRIVACY.md](PRIVACY.md), e.g. `https://github.com/<you>/<repo>/blob/main/docs/PRIVACY.md`).
 
 Why: in Development mode Meta only delivers webhooks for accounts that have a role on the app (your testers). Comments and DMs from real people only arrive when the app is **Live**. Standard Access is enough for your own account — **no App Review needed**.
 

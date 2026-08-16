@@ -9,7 +9,7 @@ import { config } from './config.js';
 import { currentUser, requireAuth } from './auth.js';
 import { auth } from './routes/auth.js';
 import { items } from './routes/items.js';
-import { importRoutes } from './routes/import.js';
+import { importRoutes, harvestFormRoute } from './routes/import.js';
 import { misc } from './routes/misc.js';
 import { settings } from './routes/settings.js';
 import { automations, webhooks } from './routes/automations.js';
@@ -47,9 +47,10 @@ export function createApp() {
 
   app.get('/api/health', (c) => c.json({ ok: true, version: process.env.npm_package_version || '1.0.0', time: new Date().toISOString() }));
 
-  // Public: auth + webhooks + harvester script
+  // Public: auth + webhooks + harvester script + token-protected direct upload from the harvester
   app.route('/api/auth', auth);
   app.route('/api/webhooks', webhooks);
+  app.route('/api/import/harvest-form', harvestFormRoute);
   app.get('/harvester.js', (c) => {
     const p = findHarvester();
     if (!p) return c.text('// harvester not found', 404);

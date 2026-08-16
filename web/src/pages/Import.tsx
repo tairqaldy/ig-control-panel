@@ -37,8 +37,11 @@ export default function Import() {
   const [script, setScript] = useState<string>('');
   const worker = useWorkerStatus();
   const history = useQuery({ queryKey: ['imports'], queryFn: () => api.get<{ imports: any[] }>('/api/import/history') });
+  const token = useQuery({ queryKey: ['upload-token'], queryFn: () => api.post<{ token: string; expiresAt: number }>('/api/import/token'), staleTime: 60 * 60_000 });
   useEffect(() => { fetch('/harvester.js').then((r) => r.text()).then(setScript).catch(() => {}); }, []);
-  const bookmarklet = script ? `javascript:${encodeURIComponent(script.replace(/^\/\*[\s\S]*?\*\/\s*/, ''))}` : '';
+  // The script we hand out embeds a private 24h upload token so the harvester can "Send to Resurface" directly.
+  const personalScript = script ? script.replace(/__RESURFACE_TOKEN__/g, token.data?.token || '__RESURFACE_TOKEN__') : '';
+  const bookmarklet = personalScript ? `javascript:${encodeURIComponent(personalScript.replace(/^\/\*[\s\S]*?\*\/\s*/, ''))}` : '';
 
   const done = (r: any) => {
     toast.success(`Imported ${r.total}: ${r.created} new, ${r.updated} updated${r.queued ? ` · ${r.queued} queued for analysis` : ''}`);
@@ -48,7 +51,7 @@ export default function Import() {
   const upExport = useMutation({ mutationFn: (f: File) => { const fd = new FormData(); fd.append('file', f); fd.append('auto_analyze', autoAnalyze ? '1' : '0'); fd.append('include_liked', includeLiked ? '1' : '0'); return api.post<any>('/api/import/instagram-export', fd); }, onSuccess: done, onError: (e: any) => toast.error(e.message) });
   const upUrls = useMutation({ mutationFn: () => api.post<any>('/api/import/urls', { urls, auto_analyze: autoAnalyze }), onSuccess: (r) => { done(r); setUrls(''); }, onError: (e: any) => toast.error(e.message) });
   const jobs = useMutation({ mutationFn: (p: { path: string; body?: any }) => api.post<any>(p.path, p.body), onSuccess: () => { qc.invalidateQueries({ queryKey: ['jobs-status'] }); qc.invalidateQueries({ queryKey: ['items'] }); } });
-  const copyScript = useCallback(() => { copyText(script); toast.success('Harvester script copied — paste it into the DevTools console on instagram.com'); }, [script]);
+  const copyScript = useCallback(() => { copyText(personalScript); toast.success('Harvester script copied — paste it into the DevTools console on instagram.com'); }, [personalScript]);
 
   const w = worker.data;
   return (
@@ -87,8 +90,8 @@ export default function Import() {
               {[
                 ['Open instagram.com in a desktop browser', 'Make sure you’re logged in to the account whose saves you want.'],
                 ['Run the harvester there', <>Either click the bookmarklet below on instagram.com, or open DevTools (F12 → Console), paste the script and hit Enter. Chrome may ask you to type <code className="font-mono">allow pasting</code> first.</>],
-                ['Press Start and wait', 'A small panel appears. It pages through your saves at ~1 request/second (5,000 saves ≈ 5 minutes) and downloads a JSON file when done.'],
-                ['Drop the JSON here', 'Media links in the file expire in a few days, so upload soon after harvesting. Analysis then runs in the background.'],
+                ['Press Start and wait', 'A small panel appears. It pages through your saves at ~1 request/second (Instagram is slow on big libraries — a few thousand saves can take 20–40 minutes; you can Stop and later Start again to resume).'],
+                ['Send to Resurface (or drop the JSON here)', 'When it finishes, click “Send to Resurface” — the script you copied embeds a private 24-hour upload token, so it posts straight into this dashboard. Or “Download JSON” and drop the file below. Media links expire in a few days, so don’t wait. Analysis then runs in the background.'],
               ].map(([t, d], i) => (
                 <li key={i} className="flex gap-3"><span className="font-mono text-[11px] text-accent pt-1 w-5 shrink-0">{String(i + 1).padStart(2, '0')}</span><div><div className="font-medium">{t}</div><div className="text-muted mt-0.5 leading-relaxed">{d}</div></div></li>
               ))}
