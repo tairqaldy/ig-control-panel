@@ -71,9 +71,19 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const headers = { 'x-ig-app-id': APP_ID, 'x-requested-with': 'XMLHttpRequest', accept: '*/*' };
   async function api(path, attempt = 0) {
-    const res = await fetch(path, { headers, credentials: 'include' });
+    let res;
+    try {
+      res = await fetch(path, { headers, credentials: 'include' });
+    } catch (netErr) {
+      // transient network hiccup (tab throttled, wifi blip, connection reset) - back off and retry
+      if (attempt >= 6) throw new Error(`Network error (${netErr && netErr.message ? netErr.message : netErr}). Check your connection and click Start to resume.`);
+      const wait = 3000 * Math.pow(2, attempt);
+      setStatus(`Network hiccup. Retrying in ${wait / 1000}s... (${items.length} saves so far)`);
+      await sleep(wait);
+      return api(path, attempt + 1);
+    }
     if (res.status === 429 || res.status >= 500) {
-      if (attempt >= 4) throw new Error(`Instagram responded ${res.status} repeatedly. Try again later.`);
+      if (attempt >= 4) throw new Error(`Instagram responded ${res.status} repeatedly. Try again later - click Start to resume.`);
       const wait = 20000 * (attempt + 1);
       setStatus(`Rate limited (HTTP ${res.status}). Waiting ${wait / 1000}s... (${items.length} saves so far)`);
       await sleep(wait);
@@ -147,30 +157,35 @@
   let pages = 0;
   let collectionsInfo = [];
   let account = null;
+  let total = null;
+  // pagination cursor kept across runs so "Start" after an error/stop RESUMES instead of restarting
+  let maxId = '';
+  let feedDone = false;
 
   async function harvest() {
     stopFlag = false;
     enable(startBtn, false); enable(stopBtn, true); enable(dlBtn, false);
     const limit = Number(limitInput.value) > 0 ? Number(limitInput.value) : Infinity;
     try {
-      // account (best effort)
-      try {
-        const uid = (document.cookie.match(/ds_user_id=(\d+)/) || [])[1];
-        if (uid) { const u = await api(`/api/v1/users/${uid}/info/`); account = { ds_user_id: uid, username: u && u.user && u.user.username }; }
-      } catch (e) { /* ignore */ }
+      // account + totals (best effort, only the first time)
+      if (!account) {
+        try {
+          const uid = (document.cookie.match(/ds_user_id=(\d+)/) || [])[1];
+          if (uid) { const u = await api(`/api/v1/users/${uid}/info/`); account = { ds_user_id: uid, username: u && u.user && u.user.username }; }
+        } catch (e) { /* ignore */ }
+      }
+      if (total === null) {
+        try {
+          const cl = await api('/api/v1/collections/list/?collection_types=' + encodeURIComponent('["ALL_MEDIA_AUTO_COLLECTION","MEDIA"]') + '&include_public_only=0&get_cover_media_lists=false&max_id=');
+          total = cl.all_saved_media_count || (cl.items && cl.items.find((c) => c.collection_type === 'ALL_MEDIA_AUTO_COLLECTION') || {}).collection_media_count || null;
+          collectionsInfo = (cl.items || []).filter((c) => c.collection_type === 'MEDIA').map((c) => ({ id: String(c.collection_id), name: c.collection_name, count: c.collection_media_count || 0 }));
+          cCols.textContent = collectionsInfo.length ? `${collectionsInfo.length} collections` : '';
+        } catch (e) { /* ignore */ }
+      }
 
-      // total count via collections list
-      let total = null;
-      try {
-        const cl = await api('/api/v1/collections/list/?collection_types=' + encodeURIComponent('["ALL_MEDIA_AUTO_COLLECTION","MEDIA"]') + '&include_public_only=0&get_cover_media_lists=false&max_id=');
-        total = cl.all_saved_media_count || (cl.items && cl.items.find((c) => c.collection_type === 'ALL_MEDIA_AUTO_COLLECTION') || {}).collection_media_count || null;
-        collectionsInfo = (cl.items || []).filter((c) => c.collection_type === 'MEDIA').map((c) => ({ id: String(c.collection_id), name: c.collection_name, count: c.collection_media_count || 0 }));
-        cCols.textContent = collectionsInfo.length ? `${collectionsInfo.length} collections` : '';
-      } catch (e) { /* ignore */ }
-
-      // main saved feed
-      let maxId = '';
-      let more = true;
+      // main saved feed (resumes from the last cursor)
+      let more = !feedDone;
+      if (items.length && more) setStatus(`Resuming from ${items.length} saves...`);
       while (more && !stopFlag && items.length < limit) {
         const data = await api('/api/v1/feed/saved/posts/' + (maxId ? `?max_id=${encodeURIComponent(maxId)}` : ''));
         pages++;
@@ -186,15 +201,17 @@
         }
         more = !!data.more_available && !!data.next_max_id && list.length > 0;
         maxId = data.next_max_id || '';
+        if (!more) feedDone = true;
         cItems.textContent = `${items.length} saves`; cPages.textContent = `${pages} pages`;
         const pct = total ? Math.min(100, Math.round((items.length / Math.min(total, limit)) * 100)) : Math.min(95, pages * 2);
         fill.style.width = pct + '%';
         setStatus(`Fetching saved posts... ${items.length}${total ? ` / ${Math.min(total, limit)}` : ''}`);
+        window.__resurfaceProgress = { items: items.length, pages, total, cursor: maxId };
         if (more) await sleep(900 + Math.random() * 900);
       }
 
-      // collections membership
-      if (optCollections.checked && collectionsInfo.length && !stopFlag) {
+      // collections membership (only after the main feed completed)
+      if (feedDone && optCollections.checked && collectionsInfo.length && !stopFlag) {
         for (const col of collectionsInfo) {
           if (stopFlag) break;
           let cMax = ''; let cMore = true; let guard = 0;
