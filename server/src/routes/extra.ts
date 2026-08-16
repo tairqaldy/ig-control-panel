@@ -5,6 +5,8 @@
  * Add ONE line per feature; keep imports at the top. Order: instagram, companion, ask/onboarding.
  */
 import type { Hono } from 'hono';
+import { admin } from './backup.js';
+import { startBackupJobs } from '../services/backup.js';
 import { automationsStarter, instagram, instagramPublic } from './instagram.js';
 import { startInstagramJobs } from '../services/instagram.js';
 import { companion, companionDevice } from './companion.js';
@@ -19,6 +21,7 @@ export function mountPublicExtras(app: Hono) {
 }
 
 export function mountProtectedExtras(app: Hono) {
+  app.route('/api/admin', admin); startBackupJobs();
   void app;
   app.route('/api/instagram', instagram); app.route('/api/automations', automationsStarter); startInstagramJobs(); // connect, account, analytics, starter rules + OWNER_PLAN/token-refresh boot hook (server-instagram agent)
   app.route('/api/companion', companion); startCompanionJobs(); // pair-code, devices, runs, notice + server-side harvest scheduler (server-companion agent)

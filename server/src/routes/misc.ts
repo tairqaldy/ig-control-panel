@@ -237,24 +237,99 @@ misc.get('/resurface/random', (c) => {
 });
 
 /* ---------------- graph ---------------- */
-misc.get('/graph', (c) => {
-  const t = tid(c);
+type GraphMode = 'overview' | 'category' | 'all';
+/** Every graph query looks at the same slice of the library: this tenant, analyzed, not archived, not excluded. */
+const G_WHERE = "tenant_id = ? AND archived = 0 AND excluded = 0 AND analysis_status = 'done'";
+const G_WHERE_I = "i.tenant_id = ? AND i.archived = 0 AND i.excluded = 0 AND i.analysis_status = 'done'";
+const G_CAT = "COALESCE(json_extract(analysis, '$.category'), 'Other')";
+const G_CAT_I = "COALESCE(json_extract(i.analysis, '$.category'), 'Other')";
+const gnum = (v: string | undefined, dflt: number, lo: number, hi: number) => {
+  const n = v === undefined || v === '' ? dflt : Number(v);
+  return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : dflt;
+};
+
+function graphCategoryRows(t: number) {
+  return db().prepare(`SELECT ${G_CAT} AS name, COUNT(*) AS count, AVG(CAST(json_extract(analysis, '$.usefulness_score') AS REAL)) AS avg_useful
+    FROM items WHERE ${G_WHERE} GROUP BY name ORDER BY count DESC, name ASC`).all(t) as Array<{ name: string; count: number; avg_useful: number | null }>;
+}
+function graphTotals(t: number) {
   const d = db();
-  // Defaults are tuned so a 1,500-save library yields ~5k links (smooth), not 15k+ (freezes). Plans cap the node count.
-  const graphCap = limitsFor(t).graphNodes;
-  const maxItems = Math.min(6000, graphCap, Number(c.req.query('max_items') || 800));
-  const minTag = Math.max(1, Number(c.req.query('min_tag') || 3));
-  const minAuthor = Math.max(1, Number(c.req.query('min_author') || 3));
-  const tagsPerItem = Math.max(1, Math.min(10, Number(c.req.query('tags_per_item') || 3)));
-  const similarPerItem = Math.max(0, Math.min(8, Number(c.req.query('similar_per_item') || 2)));
-  const similarMin = Math.min(0.99, Math.max(0.3, Number(c.req.query('similar_min') || 0.7)));
-  const includeSimilar = c.req.query('similar') !== '0' && similarPerItem > 0;
-  const includeCategoryHubs = c.req.query('category_hubs') !== '0';
-  const category = c.req.query('category') || '';
+  const items = (d.prepare(`SELECT COUNT(*) AS n FROM items WHERE ${G_WHERE}`).get(t) as any).n as number;
+  const tags = (d.prepare(`SELECT COUNT(DISTINCT t.tag) AS n FROM item_tags t JOIN items i ON i.id = t.item_id WHERE ${G_WHERE_I}`).get(t) as any).n as number;
+  const creators = (d.prepare(`SELECT COUNT(DISTINCT author_username) AS n FROM items WHERE ${G_WHERE} AND author_username IS NOT NULL AND author_username != ''`).get(t) as any).n as number;
+  return { items, tags, creators };
+}
+/** Strongest 1–2 categories for a tag/creator: always the top one, the runner-up only when it is genuinely shared. */
+function topTwo(list: Array<{ cat: string; n: number }>) {
+  const s = list.slice().sort((a, b) => b.n - a.n || a.cat.localeCompare(b.cat));
+  const out = s.slice(0, 1);
+  if (s[1] && s[1].n >= 2 && s[1].n >= s[0].n * 0.6) out.push(s[1]);
+  return out;
+}
+
+/**
+ * mode=overview — the map. One node per category, the `topTags` most-used tags and the `topCreators` most-saved
+ * creators, each linked to the 1–2 categories they actually live in. No item nodes: ≤ ~70 nodes / ≤ ~120 links.
+ */
+function overviewGraph(t: number, cats: ReturnType<typeof graphCategoryRows>, topTags: number, topCreators: number, graphCap: number) {
+  const d = db();
+  // categories are the map itself and are never dropped; the plan cap trims the tags/creators around them
+  const room = Math.max(0, graphCap - cats.length);
+  if (topTags + topCreators > room) { topCreators = Math.min(topCreators, Math.floor(room / 4)); topTags = Math.max(0, room - topCreators); }
+  const catSet = new Set(cats.map((r) => r.name));
+  const nodes: any[] = cats.map((r) => ({ id: `cat:${r.name}`, type: 'category', label: r.name, count: r.count, category: r.name, avgUseful: r.avg_useful === null ? null : Math.round(r.avg_useful * 10) / 10 }));
+  const links: any[] = [];
+
+  const tagRows = topTags > 0
+    ? d.prepare(`SELECT t.tag AS tag, COUNT(*) AS n FROM item_tags t JOIN items i ON i.id = t.item_id WHERE ${G_WHERE_I} GROUP BY t.tag ORDER BY n DESC, t.tag ASC LIMIT ?`).all(t, topTags) as Array<{ tag: string; n: number }>
+    : [];
+  if (tagRows.length) {
+    const ph = tagRows.map(() => '?').join(',');
+    const mix = d.prepare(`SELECT t.tag AS tag, ${G_CAT_I} AS cat, COUNT(*) AS n FROM item_tags t JOIN items i ON i.id = t.item_id
+      WHERE ${G_WHERE_I} AND t.tag IN (${ph}) GROUP BY t.tag, cat`).all(t, ...tagRows.map((r) => r.tag)) as Array<{ tag: string; cat: string; n: number }>;
+    const byTag = new Map<string, Array<{ cat: string; n: number }>>();
+    for (const m of mix) { const a = byTag.get(m.tag) || []; a.push({ cat: m.cat, n: m.n }); byTag.set(m.tag, a); }
+    for (const r of tagRows) {
+      const home = topTwo(byTag.get(r.tag) || []);
+      nodes.push({ id: `tag:${r.tag}`, type: 'tag', label: r.tag, count: r.n, category: home[0]?.cat ?? null });
+      for (const h of home) if (catSet.has(h.cat)) links.push({ source: `tag:${r.tag}`, target: `cat:${h.cat}`, kind: 'tag', weight: h.n });
+    }
+  }
+
+  const creatorRows = topCreators > 0
+    ? d.prepare(`SELECT author_username AS name, COUNT(*) AS n FROM items WHERE ${G_WHERE} AND author_username IS NOT NULL AND author_username != '' GROUP BY author_username ORDER BY n DESC, name ASC LIMIT ?`).all(t, topCreators) as Array<{ name: string; n: number }>
+    : [];
+  if (creatorRows.length) {
+    const names = creatorRows.map((r) => r.name);
+    const ph = names.map(() => '?').join(',');
+    const mix = d.prepare(`SELECT author_username AS name, ${G_CAT} AS cat, COUNT(*) AS n FROM items WHERE ${G_WHERE} AND author_username IN (${ph}) GROUP BY author_username, cat`).all(t, ...names) as Array<{ name: string; cat: string; n: number }>;
+    // thumb = the creator's most-liked save that actually has one
+    const thumbRows = d.prepare(`SELECT author_username AS name, thumb_path FROM items WHERE ${G_WHERE} AND author_username IN (${ph}) AND thumb_path IS NOT NULL ORDER BY COALESCE(like_count, 0) DESC`).all(t, ...names) as Array<{ name: string; thumb_path: string }>;
+    const thumbOf = new Map<string, string>();
+    for (const r of thumbRows) if (!thumbOf.has(r.name)) thumbOf.set(r.name, r.thumb_path);
+    const byCreator = new Map<string, Array<{ cat: string; n: number }>>();
+    for (const m of mix) { const a = byCreator.get(m.name) || []; a.push({ cat: m.cat, n: m.n }); byCreator.set(m.name, a); }
+    for (const r of creatorRows) {
+      const home = topTwo(byCreator.get(r.name) || []);
+      const thumb = thumbOf.get(r.name);
+      nodes.push({ id: `author:${r.name}`, type: 'author', label: `@${r.name}`, author: r.name, count: r.n, category: home[0]?.cat ?? null, thumb: thumb ? `/media/${thumb}` : null });
+      for (const h of home) if (catSet.has(h.cat)) links.push({ source: `author:${r.name}`, target: `cat:${h.cat}`, kind: 'author', weight: h.n });
+    }
+  }
+  return { nodes, links, tags: tagRows.length, creators: creatorRows.length };
+}
+
+interface ItemGraphOpts { maxItems: number; minTag: number; minAuthor: number; tagsPerItem: number; similarPerItem: number; similarMin: number; includeSimilar: boolean; includeCategoryHubs: boolean; category: string }
+/**
+ * mode=category / mode=all — item nodes (newest first by saved_rank) with their tags, creators, category hubs and
+ * similarity edges. Defaults are tuned so a 1,500-save library yields ~5k links (smooth), not 15k+ (freezes).
+ */
+function itemGraph(t: number, o: ItemGraphOpts) {
+  const d = db();
   const where = ['tenant_id = ?', 'archived = 0', 'excluded = 0', "analysis_status = 'done'"];
   const params: unknown[] = [t];
-  if (category) { where.push("json_extract(analysis, '$.category') = ?"); params.push(category); }
-  const rows = d.prepare(`SELECT id, author_username, thumb_path, analysis, like_count, play_count FROM items WHERE ${where.join(' AND ')} ORDER BY CASE WHEN saved_rank IS NULL THEN 1 ELSE 0 END, saved_rank ASC LIMIT ?`).all(...params, maxItems) as any[];
+  if (o.category) { where.push(`${G_CAT} = ?`); params.push(o.category); }
+  const rows = d.prepare(`SELECT id, author_username, thumb_path, analysis, like_count, play_count FROM items WHERE ${where.join(' AND ')} ORDER BY CASE WHEN saved_rank IS NULL THEN 1 ELSE 0 END, saved_rank ASC LIMIT ?`).all(...params, o.maxItems) as any[];
   const ids = new Set(rows.map((r) => r.id));
   const nodes: any[] = [];
   const links: any[] = [];
@@ -268,33 +343,33 @@ misc.get('/graph', (c) => {
     if (r.author_username) authorCount.set(r.author_username, (authorCount.get(r.author_username) || 0) + 1);
     catCount.set(r.a.category, (catCount.get(r.a.category) || 0) + 1);
   }
-  const keepTags = new Set(Array.from(tagCount.entries()).filter(([, n]) => n >= minTag).sort((a, b) => b[1] - a[1]).slice(0, 250).map(([tg]) => tg));
-  const keepAuthors = new Set(Array.from(authorCount.entries()).filter(([, n]) => n >= minAuthor).slice(0, 150).map(([a]) => a));
+  const keepTags = new Set(Array.from(tagCount.entries()).filter(([, n]) => n >= o.minTag).sort((a, b) => b[1] - a[1]).slice(0, 250).map(([tg]) => tg));
+  const keepAuthors = new Set(Array.from(authorCount.entries()).filter(([, n]) => n >= o.minAuthor).slice(0, 150).map(([a]) => a));
   const usedTags = new Set<string>();
   const usedAuthors = new Set<string>();
   const itemNodes: any[] = [];
   for (const r of parsed) {
     if (!r.a) continue;
-    itemNodes.push({ id: r.id, type: 'item', label: r.a.title, category: r.a.category, thumb: r.thumb_path ? `/media/${r.thumb_path}` : null, useful: r.a.usefulness_score, author: r.author_username, tags: r.a.tags });
-    if (includeCategoryHubs) links.push({ source: r.id, target: `cat:${r.a.category}`, kind: 'category' });
+    itemNodes.push({ id: r.id, type: 'item', label: r.a.title, oneLiner: r.a.one_liner || null, category: r.a.category, thumb: r.thumb_path ? `/media/${r.thumb_path}` : null, useful: r.a.usefulness_score, author: r.author_username, tags: r.a.tags });
+    if (o.includeCategoryHubs) links.push({ source: r.id, target: `cat:${r.a.category}`, kind: 'category' });
     // only the item's N most-shared tags → clusters form around real themes, link count stays sane
-    const tagsSorted = (r.a.tags as string[]).filter((tg: string) => keepTags.has(tg)).sort((x: string, y: string) => (tagCount.get(y) || 0) - (tagCount.get(x) || 0)).slice(0, tagsPerItem);
+    const tagsSorted = (r.a.tags as string[]).filter((tg: string) => keepTags.has(tg)).sort((x: string, y: string) => (tagCount.get(y) || 0) - (tagCount.get(x) || 0)).slice(0, o.tagsPerItem);
     for (const tg of tagsSorted) { links.push({ source: r.id, target: `tag:${tg}`, kind: 'tag' }); usedTags.add(tg); }
     if (r.author_username && keepAuthors.has(r.author_username)) { links.push({ source: r.id, target: `author:${r.author_username}`, kind: 'author' }); usedAuthors.add(r.author_username); }
   }
-  if (includeCategoryHubs) for (const [cat, n] of catCount) nodes.push({ id: `cat:${cat}`, type: 'category', label: cat, count: n });
+  if (o.includeCategoryHubs) for (const [cat, n] of catCount) nodes.push({ id: `cat:${cat}`, type: 'category', label: cat, count: n, category: cat });
   for (const tg of usedTags) nodes.push({ id: `tag:${tg}`, type: 'tag', label: tg, count: tagCount.get(tg) });
-  for (const a of usedAuthors) nodes.push({ id: `author:${a}`, type: 'author', label: `@${a}`, count: authorCount.get(a) });
+  for (const a of usedAuthors) nodes.push({ id: `author:${a}`, type: 'author', label: `@${a}`, author: a, count: authorCount.get(a) });
   nodes.push(...itemNodes);
-  if (includeSimilar) {
+  if (o.includeSimilar && o.similarPerItem > 0) {
     // top-N strongest neighbors per item, undirected, above the threshold (edges only among this tenant's selected items)
-    const nb = d.prepare('SELECT n.item_id, n.neighbor_id, n.score FROM item_neighbors n JOIN items i ON i.id = n.item_id WHERE i.tenant_id = ? AND n.score >= ? ORDER BY n.item_id, n.score DESC').all(t, similarMin) as Array<{ item_id: string; neighbor_id: string; score: number }>;
+    const nb = d.prepare('SELECT n.item_id, n.neighbor_id, n.score FROM item_neighbors n JOIN items i ON i.id = n.item_id WHERE i.tenant_id = ? AND n.score >= ? ORDER BY n.item_id, n.score DESC').all(t, o.similarMin) as Array<{ item_id: string; neighbor_id: string; score: number }>;
     const seen = new Set<string>();
     const perItem = new Map<string, number>();
     for (const e of nb) {
       if (!ids.has(e.item_id) || !ids.has(e.neighbor_id)) continue;
       const c1 = perItem.get(e.item_id) || 0;
-      if (c1 >= similarPerItem) continue;
+      if (c1 >= o.similarPerItem) continue;
       const key = e.item_id < e.neighbor_id ? `${e.item_id}|${e.neighbor_id}` : `${e.neighbor_id}|${e.item_id}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -303,5 +378,52 @@ misc.get('/graph', (c) => {
     }
   }
   const totalDone = (d.prepare(`SELECT COUNT(*) AS n FROM items WHERE ${where.join(' AND ')}`).get(...params) as any).n as number;
-  return c.json({ nodes, links, meta: { items: parsed.length, tags: usedTags.size, authors: usedAuthors.size, categories: includeCategoryHubs ? catCount.size : 0, links: links.length, maxItems, capped: totalDone > maxItems, planCap: finite(graphCap), totalAnalyzed: totalDone } });
+  return { nodes, links, items: parsed.length, tags: usedTags.size, authors: usedAuthors.size, maxItems: o.maxItems, capped: totalDone > o.maxItems, totalAnalyzed: totalDone };
+}
+
+/**
+ * GET /api/graph — three views over one library, all tenant-scoped, analysis_status='done', not archived/excluded,
+ * ordered by saved_rank (newest first) and capped by the plan's `graphNodes`.
+ *
+ *   ?mode=overview (default)  the map: categories + the top tags + the top creators around them, no item nodes
+ *                             (`top_tags` 36, `top_creators` 12 → ≤ ~70 nodes / ≤ ~120 links)
+ *   ?mode=category&category=  one category: its items (`max_items` 250), its tags (≥ 2 items), its creators
+ *                             (≥ 2 items) and the similarity links between those items
+ *   ?mode=all                 the whole library, unchanged defaults (800 items, min_tag 3, similarity on)
+ *
+ * Every earlier query param still applies to category/all: max_items, min_tag, min_author, tags_per_item,
+ * similar_per_item, similar_min, similar=0|1, category_hubs=0|1, category.
+ * Node ids: `cat:<name>` · `tag:<tag>` · `author:<username>` · <item id>.
+ * meta = { mode, category, categories: [{name,count}], totals: {items,tags,creators}, items, tags, authors, links,
+ *          maxItems, capped, planCap, totalAnalyzed }.
+ */
+misc.get('/graph', (c) => {
+  const t = tid(c);
+  const q = (k: string) => c.req.query(k);
+  const graphCap = limitsFor(t).graphNodes;
+  const raw = (q('mode') || 'overview').toLowerCase();
+  const mode: GraphMode = raw === 'all' ? 'all' : raw === 'category' ? 'category' : 'overview';
+  const category = (q('category') || '').trim();
+  if (mode === 'category' && !category) return c.json({ error: 'mode=category needs ?category= — the names are in meta.categories of mode=overview' }, 400);
+  const cats = graphCategoryRows(t);
+  const categories = cats.map((r) => ({ name: r.name, count: r.count }));
+  const totals = graphTotals(t);
+
+  if (mode === 'overview') {
+    const g = overviewGraph(t, cats, gnum(q('top_tags'), 36, 0, 80), gnum(q('top_creators'), 12, 0, 40), graphCap);
+    return c.json({ nodes: g.nodes, links: g.links, meta: { mode, category: null, categories, totals, items: 0, tags: g.tags, authors: g.creators, links: g.links.length, maxItems: 0, capped: false, planCap: finite(graphCap), totalAnalyzed: totals.items } });
+  }
+  const isCat = mode === 'category';
+  const g = itemGraph(t, {
+    maxItems: Math.min(6000, graphCap, gnum(q('max_items'), isCat ? 250 : 800, 10, 6000)),
+    minTag: gnum(q('min_tag'), isCat ? 2 : 3, 1, 50),
+    minAuthor: gnum(q('min_author'), isCat ? 2 : 3, 1, 50),
+    tagsPerItem: gnum(q('tags_per_item'), 3, 1, 10),
+    similarPerItem: gnum(q('similar_per_item'), 2, 0, 8),
+    similarMin: gnum(q('similar_min'), 0.7, 0.3, 0.99),
+    includeSimilar: q('similar') !== '0',
+    includeCategoryHubs: q('category_hubs') !== '0',
+    category,
+  });
+  return c.json({ nodes: g.nodes, links: g.links, meta: { mode, category: category || null, categories, totals, items: g.items, tags: g.tags, authors: g.authors, links: g.links.length, maxItems: g.maxItems, capped: g.capped, planCap: finite(graphCap), totalAnalyzed: g.totalAnalyzed } });
 });
