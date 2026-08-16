@@ -4,14 +4,56 @@
   "fps": 30,
   "xfade": 0.45,
   "clips": [
-    { "type": "image", "src": "../web/public/landing/cards/card-open.jpg", "duration": 3.2, "zoom": "in" },
-    { "type": "image", "src": "../web/public/landing/shots/import.jpg", "duration": 3.4, "zoom": "in" },
-    { "type": "video", "src": "../web/public/landing/clips/library.mp4", "duration": 4.5 },
-    { "type": "image", "src": "../web/public/landing/shots/save.jpg", "duration": 4.0, "zoom": "pan-right" },
-    { "type": "video", "src": "../web/public/landing/clips/ask.mp4", "duration": 11 },
-    { "type": "video", "src": "../web/public/landing/clips/graph.mp4", "duration": 4.5 },
-    { "type": "image", "src": "../web/public/landing/shots/automations.jpg", "duration": 3.4, "zoom": "out" },
-    { "type": "image", "src": "../web/public/landing/shots/analytics.jpg", "duration": 3.4, "zoom": "in" },
-    { "type": "image", "src": "../web/public/landing/cards/card-close.jpg", "duration": 3.4, "zoom": "none" }
+    {
+      "type": "image",
+      "src": "../assets/tour-src/cards/card-open.jpg",
+      "duration": 3.2,
+      "zoom": "in"
+    },
+    {
+      "type": "image",
+      "src": "../web/public/landing/shots/import.jpg",
+      "duration": 3.4,
+      "zoom": "in"
+    },
+    {
+      "type": "video",
+      "src": "../assets/tour-src/clips/library.webm",
+      "duration": 4.5
+    },
+    {
+      "type": "image",
+      "src": "../web/public/landing/shots/save.jpg",
+      "duration": 4,
+      "zoom": "pan-right"
+    },
+    {
+      "type": "video",
+      "src": "../assets/tour-src/clips/ask.webm",
+      "duration": 11
+    },
+    {
+      "type": "video",
+      "src": "../assets/tour-src/clips/graph.webm",
+      "duration": 4.5
+    },
+    {
+      "type": "image",
+      "src": "../web/public/landing/shots/automations.jpg",
+      "duration": 3.4,
+      "zoom": "out"
+    },
+    {
+      "type": "image",
+      "src": "../web/public/landing/shots/analytics.jpg",
+      "duration": 3.4,
+      "zoom": "in"
+    },
+    {
+      "type": "image",
+      "src": "../assets/tour-src/cards/card-close.jpg",
+      "duration": 3.4,
+      "zoom": "none"
+    }
   ]
 }
