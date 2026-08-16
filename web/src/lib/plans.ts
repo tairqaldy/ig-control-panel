@@ -9,7 +9,8 @@ export const meterRemaining = (m: UsageMeter | undefined): number => (!m ? 0 : i
 
 /** Server timestamps are unix seconds everywhere; be tolerant of milliseconds anyway. */
 export const toMs = (t: number | null | undefined): number | null => (t === null || t === undefined ? null : t > 1e12 ? t : t * 1000);
-export const daysLeft = (t: number | null | undefined): number | null => { const ms = toMs(t); return ms === null ? null : Math.max(0, Math.ceil((ms - Date.now()) / 86_400_000)); };
+/** Whole days left, tolerant of ~1 h of client/server clock skew (72 h + 3 s must read "3 days", not 4). */
+export const daysLeft = (t: number | null | undefined): number | null => { const ms = toMs(t); return ms === null ? null : Math.max(0, Math.ceil((ms - Date.now()) / 86_400_000 - 1 / 24)); };
 
 export const PLAN_NAMES: Record<PlanId, string> = { owner: 'Owner', trial: 'Trial', free: 'Free', pro: 'Pro', studio: 'Studio' };
 export const planName = (p: PlanId | string | null | undefined): string => (p && (PLAN_NAMES as any)[p]) || (p ? String(p) : '—');
