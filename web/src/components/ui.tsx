@@ -137,9 +137,9 @@ export function Modal({ open, onClose, children, width = 'max-w-5xl', className 
   );
 }
 
-export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label?: string }) {
+export function Toggle({ checked, onChange, label, ariaLabel, disabled }: { checked: boolean; onChange: (v: boolean) => void; label?: string; ariaLabel?: string; disabled?: boolean }) {
   return (
-    <button type="button" onClick={() => onChange(!checked)} className="inline-flex items-center gap-2 text-[13px] text-ink-2" aria-pressed={checked}>
+    <button type="button" role="switch" aria-checked={checked} aria-label={ariaLabel || (typeof label === 'string' ? label : undefined)} disabled={disabled} onClick={() => !disabled && onChange(!checked)} className={cn('inline-flex items-center gap-2 text-[13px] text-ink-2', disabled && 'opacity-50 cursor-not-allowed')}>
       <span className={cn('relative inline-block h-5 w-9 rounded-full transition-colors', checked ? 'bg-accent' : 'bg-line-2')}>
         <span className={cn('absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-surface shadow transition-transform', checked && 'translate-x-4')} />
       </span>

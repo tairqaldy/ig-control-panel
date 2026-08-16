@@ -80,7 +80,7 @@ function StarterCard({ tpl, rule, latestSenderId, onEditAll, canCreate, onBlocke
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap"><span className="text-[14px] font-medium">{tpl.name}</span>{rule ? <span className={cn('chip !text-[10.5px]', enabled ? 'chip-active' : 'text-muted')}>{enabled ? <><Check size={10} /> on</> : 'off'}</span> : <span className="chip !text-[10.5px] text-muted">not added</span>}</div>
         </div>
-        <span title={enabled ? 'Switch off' : 'Switch on'}><Toggle checked={enabled} onChange={onToggle} /></span>
+        <span title={enabled ? 'Switch off' : 'Switch on'}><Toggle checked={enabled} onChange={onToggle} ariaLabel={`${tpl.name}: ${enabled ? 'on' : 'off'}`} /></span>
       </div>
       <dl className="grid grid-cols-[38px_1fr] gap-x-2 gap-y-1 text-[12px] leading-relaxed">
         <dt className="font-mono text-[10.5px] uppercase tracking-wider text-muted pt-[3px]">When</dt><dd className="text-ink-2">{tpl.when}</dd>

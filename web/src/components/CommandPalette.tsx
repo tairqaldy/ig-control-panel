@@ -24,6 +24,22 @@ export function CommandPalette() {
   const tags = (facets.data?.tags || []).filter((t) => !dq || t.name.includes(dq.toLowerCase())).slice(0, 6);
   const authors = (facets.data?.authors || []).filter((t) => !dq || t.name.toLowerCase().includes(dq.toLowerCase())).slice(0, 4);
 
+  const PAGES = [
+    { l: 'Overview', to: '/', I: LayoutGrid }, { l: 'Library', to: '/library', I: Library }, { l: 'Resurface', to: '/resurface', I: Sparkles }, { l: 'Ask', to: '/ask', I: MessageSquareText },
+    { l: 'Graph', to: '/graph', I: Waypoints }, { l: 'Import', to: '/import', I: Upload }, { l: 'Automations', to: '/automations', I: Bot }, { l: 'Analytics', to: '/analytics', I: BarChart3 },
+    ...(hosted ? [{ l: 'Billing', to: '/billing', I: CreditCard }] : []), { l: 'Settings', to: '/settings', I: Settings },
+  ];
+  const pageMatches = PAGES.filter((p) => !dq || p.l.toLowerCase().includes(dq.toLowerCase()));
+  // A query that names a page ("analytics", "bill") should jump there on Enter — list pages before saves in that case.
+  const pageFirst = dq.length >= 2 && pageMatches.length > 0 && pageMatches.length < PAGES.length;
+  const goTo = (
+                <Command.Group heading="Go to">
+                  {pageMatches.map((p) => (
+                    <Item key={p.to} onSelect={() => go(() => nav(p.to))}><p.I size={14} className="text-muted" /><span className="text-[13px]">{p.l}</span></Item>
+                  ))}
+                  <Item onSelect={() => go(toggle)}>{theme === 'dark' ? <Sun size={14} className="text-muted" /> : <Moon size={14} className="text-muted" />}<span className="text-[13px]">Switch to {theme === 'dark' ? 'light' : 'dark'} theme</span></Item>
+                </Command.Group>
+  );
   return (
     <AnimatePresence>
       {open && (
@@ -38,6 +54,7 @@ export function CommandPalette() {
               </div>
               <Command.List className="max-h-[60vh] overflow-y-auto p-2 [&_[cmdk-group-heading]]:eyebrow [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
                 <Command.Empty className="px-3 py-8 text-center text-[13px] text-muted">{dq.length >= 2 ? <>No matches for “{dq}”. Try a shorter word.</> : 'Type at least two letters to search saves.'}</Command.Empty>
+                {pageFirst && goTo}
                 {items.data?.items.length ? (
                   <Command.Group heading="Saves">
                     {items.data.items.map((it) => (
@@ -61,16 +78,7 @@ export function CommandPalette() {
                     {authors.map((t) => <Item key={t.name} onSelect={() => go(() => nav(`/library?author=${encodeURIComponent(t.name)}`))}><User size={14} className="text-muted" /><span className="text-[13px]">@{t.name}</span><span className="ml-auto font-mono text-[11px] text-muted">{t.n}</span></Item>)}
                   </Command.Group>
                 )}
-                <Command.Group heading="Go to">
-                  {[
-                    { l: 'Overview', to: '/', I: LayoutGrid }, { l: 'Library', to: '/library', I: Library }, { l: 'Resurface', to: '/resurface', I: Sparkles }, { l: 'Ask', to: '/ask', I: MessageSquareText },
-                    { l: 'Graph', to: '/graph', I: Waypoints }, { l: 'Import', to: '/import', I: Upload }, { l: 'Automations', to: '/automations', I: Bot }, { l: 'Analytics', to: '/analytics', I: BarChart3 },
-                    ...(hosted ? [{ l: 'Billing', to: '/billing', I: CreditCard }] : []), { l: 'Settings', to: '/settings', I: Settings },
-                  ].filter((p) => !dq || p.l.toLowerCase().includes(dq.toLowerCase())).map((p) => (
-                    <Item key={p.to} onSelect={() => go(() => nav(p.to))}><p.I size={14} className="text-muted" /><span className="text-[13px]">{p.l}</span></Item>
-                  ))}
-                  <Item onSelect={() => go(toggle)}>{theme === 'dark' ? <Sun size={14} className="text-muted" /> : <Moon size={14} className="text-muted" />}<span className="text-[13px]">Switch to {theme === 'dark' ? 'light' : 'dark'} theme</span></Item>
-                </Command.Group>
+                {!pageFirst && goTo}
               </Command.List>
               <div className="hidden sm:flex items-center gap-3 border-t border-line px-4 py-2 text-[11px] text-muted"><span><kbd className="kbd">↑</kbd> <kbd className="kbd">↓</kbd> move</span><span><kbd className="kbd">↵</kbd> open</span><span className="ml-auto">Type a word to search saves; a page name to jump</span></div>
             </Command>

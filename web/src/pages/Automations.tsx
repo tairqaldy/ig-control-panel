@@ -219,7 +219,7 @@ export default function Automations() {
                     <div className="mt-1.5 text-[11px] text-muted font-mono">{r.hit_count} hits{r.last_hit_at ? ` · last ${fmtAgo(r.last_hit_at)}` : ''} · cooldown {r.cooldown_minutes}m · priority {r.priority}</div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    <Toggle checked={!!r.enabled} onChange={() => toggle.mutate(r)} />
+                    <Toggle checked={!!r.enabled} onChange={() => toggle.mutate(r)} ariaLabel={`${r.name}: ${r.enabled ? 'on' : 'off'}`} />
                     <button onClick={() => setEditing(r)} className="btn btn-ghost btn-sm !px-1.5" aria-label="Edit"><Pencil size={14} /></button>
                     <button onClick={() => { if (confirm('Delete rule?')) del.mutate(r.id); }} className="btn btn-ghost btn-sm !px-1.5 text-danger" aria-label="Delete"><Trash2 size={14} /></button>
                   </div>
