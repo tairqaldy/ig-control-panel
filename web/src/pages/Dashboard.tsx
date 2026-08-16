@@ -67,7 +67,7 @@ export default function Dashboard() {
       <PageHeader
         eyebrow={greeting}
         title={<>{s?.igUsername ? `@${s.igUsername}` : auth.username}’s inspiration, <em className="text-accent not-italic">resurfaced</em>.</>}
-        subtitle={t ? `${t.total.toLocaleString()} saves · ${t.analyzed.toLocaleString()} analyzed · ${hours}h of reels transcribed · ${t.authors} creators` : undefined}
+        subtitle={t ? `${t.total.toLocaleString()} saves · ${t.analyzed.toLocaleString()} analyzed · ${hours}h of video saved · ${t.authors} creators` : undefined}
         actions={<><Link to="/ask" className="btn btn-primary"><MessageSquareText size={14} /> Ask your saves</Link><Link to="/graph" className="btn"><Waypoints size={14} /> Graph</Link></>}
       />
 
@@ -77,7 +77,7 @@ export default function Dashboard() {
           <>
             <Stat label="Saves" value={t.total.toLocaleString()} hint={<span className="inline-flex items-center gap-2"><Clapperboard size={11} />{t.videos} <ImageIcon size={11} />{t.images} <Images size={11} />{t.carousels}</span>} />
             <Stat label="Analyzed" value={`${t.total ? Math.round((t.analyzed / t.total) * 100) : 0}%`} hint={`${t.analyzed} done${t.pending ? ` · ${t.pending} pending` : ''}${t.failed ? ` · ${t.failed} failed` : ''}`} accent />
-            <Stat label="Transcribed" value={t.transcribed.toLocaleString()} hint={<span className="inline-flex items-center gap-1"><Mic size={11} /> {hours} hours of speech</span>} />
+            <Stat label="Transcribed" value={t.transcribed.toLocaleString()} hint={<span className="inline-flex items-center gap-1"><Mic size={11} /> {hours} hours of video in the library</span>} />
             <Stat label="Evergreen" value={t.evergreen.toLocaleString()} hint={<span className="inline-flex items-center gap-2"><Leaf size={11} /> timeless · <Heart size={11} /> {t.favorites} favorites</span>} />
           </>
         ) : Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24" />)}
