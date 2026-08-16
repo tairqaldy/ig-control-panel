@@ -5,13 +5,11 @@
 Resurface itself is free (MIT). Running it:
 
 - **Hosting**: Railway Hobby (~$5/mo incl. usage credit) or any Docker host. RAM use is ~200–400 MB. Storage: ~30 KB per thumbnail + ~4 frames × ~40 KB per reel ≈ 200 KB/save → 1 GB per ~5,000 saves.
-- **OpenAI** (defaults: `gpt-5.4-mini` for analysis, `gpt-4o-mini-transcribe`, `text-embedding-3-small`):
-  - transcription: $0.003/min → a 40-second reel ≈ $0.002
-  - analysis: ~3.5k input tokens (caption + transcript + 4 low-detail frames) + ~600 output ≈ $0.005
-  - embeddings: negligible
-  - **≈ $0.005–0.007 per reel, ≈ $0.004 per image/carousel → ~$20–30 for 4,500 saves.**
-  - Cheaper: set `OPENAI_MODEL=gpt-5.4-nano` (~4× cheaper, slightly less nuanced) or `gpt-4.1-mini`. Set `VISION_FRAMES=2` to halve image tokens.
-- Ask: one small call per question (~$0.005).
+- **OpenAI** (measured on a real 3,900-save library, Standard plan = `gpt-5.4-mini` + 4 low-detail frames + `gpt-4o-mini-transcribe`):
+  - **≈ $0.0077 per reel** (analysis $0.0057 + transcription of a 40 s reel $0.002), ≈ $0.005 per image/carousel → **~$7.5 per 1,000 saves**
+  - **Economy** plan (`gpt-5.4-nano`, 2 frames, transcripts for short reels): **≈ $0.0034 per reel** → ~$3 per 1,000; skip transcription → ~$1.3 per 1,000
+  - the Import page shows *Spent so far* (from real token counts) and *To finish current scope*; you can cap spend, limit to the last N years, drop old/irrelevant saves with **Exclude**, and switch tiers at any time
+- Ask: one small call per question (~$0.005). Full table and the hosted-version math: [BUSINESS.md](BUSINESS.md).
 
 ### How long does the analysis take?
 
