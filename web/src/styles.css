@@ -182,7 +182,7 @@ body::before {
 }
 /* Screenshot frame: device-less, rounded, dark plate so JPEG edges blend */
 .mk-frame { @apply relative overflow-hidden rounded-2xl bg-[#131312]; box-shadow: 0 0 0 1px rgba(23, 22, 26, 0.08), var(--shadow-lg); }
-/* Reel river: two copies of the row inside one track; -50% = exactly one copy, so the loop is seamless */
+/* Reel river: two copies of the row inside one track; -50% = exactly one copy, so the loop has no visible seam */
 @keyframes mk-drift-left { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-50%, 0, 0); } }
 @keyframes mk-drift-right { from { transform: translate3d(-50%, 0, 0); } to { transform: translate3d(0, 0, 0); } }
 .mk-river { overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }

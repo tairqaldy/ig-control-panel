@@ -265,7 +265,7 @@ export default function Graph() {
       {/* Focus banner */}
       <AnimatePresence>
         {focus && (
-          <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="absolute left-3 sm:left-4 right-3 sm:right-auto top-[104px] card px-3 py-2 flex items-center gap-2 text-[12.5px] sm:max-w-sm">
+          <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="absolute left-3 sm:left-4 right-3 sm:right-auto bottom-3 sm:bottom-auto sm:top-[104px] card px-3 py-2 flex items-center gap-2 text-[12.5px] sm:max-w-sm">
             <Focus size={13} className="text-accent shrink-0" /> <span className="truncate"><b>{focus.type === 'tag' ? `#${focus.label}` : focus.label}</b> <span className="text-muted">· {neighbors.get(focus.id)?.size ?? 0} connected</span></span>
             <button onClick={() => { setFocus(null); fgRef.current?.zoomToFit(600, 40); }} className="btn btn-ghost btn-sm !px-1 shrink-0"><ChevronLeft size={13} /> All</button>
           </motion.div>
@@ -310,7 +310,7 @@ export default function Graph() {
       </AnimatePresence>
 
       {/* bottom-right status */}
-      <div className="absolute right-3 sm:right-4 bottom-3 sm:bottom-4 flex items-center gap-2 text-[10.5px] font-mono text-muted">
+      <div className="absolute right-3 sm:right-4 bottom-3 sm:bottom-4 hidden sm:flex items-center gap-2 text-[10.5px] font-mono text-muted">
         {engineRunning && <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-accent pulse-dot" /> settling</span>}
         <span>{data.nodes.length} nodes · {data.links.length} links</span>
       </div>

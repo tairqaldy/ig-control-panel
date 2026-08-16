@@ -64,11 +64,8 @@ export default function Billing() {
 
   return (
     <div className="max-w-5xl">
-      <PageHeader eyebrow="Billing" title={<>Your plan{plan ? <span className="text-muted"> · {planName(plan.plan)}</span> : ''}</>} subtitle="What you're on, what you've used this month, and where to change it. Paddle handles cards, invoices and VAT; nothing card-related is stored here."
-        actions={<>
-          {plan?.canManage && <button onClick={openPortal} className="btn"><Receipt size={14} /> Invoices & subscription <ExternalLink size={12} /></button>}
-          {plan && plan.plan !== 'owner' && plan.plan !== 'studio' && <button onClick={() => openUpgrade()} className="btn btn-primary"><Sparkles size={14} /> {isPaid ? 'Change plan' : 'Upgrade'}</button>}
-        </>} />
+      <PageHeader eyebrow="Billing" title={<>Your plan{plan ? <span className="text-muted"> · {planName(plan.plan)}</span> : ''}</>} subtitle="Your plan and this month's usage. Paddle handles cards, invoices and VAT; no card details are stored here."
+        actions={plan && plan.plan !== 'owner' && plan.plan !== 'studio' ? <button onClick={() => openUpgrade()} className="btn btn-primary"><Sparkles size={14} /> {isPaid ? 'Change plan' : 'Upgrade'}</button> : undefined} />
 
       {planLoading && !plan ? <Skeleton className="h-40 mb-4" /> : plan ? (
         <>
@@ -82,15 +79,14 @@ export default function Billing() {
                 {priceLine && <div className="text-[12px] text-muted mt-0.5">{priceLine} · billed by Paddle</div>}
                 {auth.email && <div className="text-[12px] text-muted mt-1">Account: {auth.email}{auth.tenantId ? ` · workspace #${auth.tenantId}` : ''}</div>}
               </div>
-              <div className="flex flex-col gap-2 min-w-[200px]">
-                {plan.plan !== 'owner' && plan.plan !== 'studio' && <button onClick={() => openUpgrade()} className="btn btn-primary btn-sm"><Sparkles size={13} /> {isPaid ? 'Upgrade to Studio' : 'Upgrade'}</button>}
-                {plan.canManage && <button onClick={openPortal} className="btn btn-sm">Manage subscription <ExternalLink size={12} /></button>}
-                <button onClick={() => { void refreshPlan(); }} className="btn btn-ghost btn-sm text-muted"><RefreshCw size={12} /> Refresh</button>
+              <div className="flex flex-row sm:flex-col flex-wrap gap-2 sm:min-w-[200px]">
+                {plan.canManage && <button onClick={openPortal} className="btn btn-sm"><Receipt size={13} /> Invoices and subscription <ExternalLink size={12} /></button>}
+                <button onClick={() => { void refreshPlan(); }} className="btn btn-ghost btn-sm text-muted" title="Re-check the plan status with Paddle"><RefreshCw size={12} /> Refresh status</button>
               </div>
             </div>
             {(eff === 'free' || plan.status === 'past_due') && (
               <div className="mt-4 flex items-start gap-2 rounded-xl bg-warn-soft border border-warn/30 px-3 py-2 text-[12.5px]"><AlertTriangle size={14} className="text-warn shrink-0 mt-0.5" />
-                {plan.status === 'past_due' ? <span>Your last payment failed. Update the card in the Paddle portal — access continues for a 7-day grace period, then the library becomes browse-only.</span> : <span>Analysis, Ask and automations are paused. Your saves are kept and exportable; upgrade to continue where you left off. Data from ended trials is deleted 30 days after the trial end unless you upgrade.</span>}
+                {plan.status === 'past_due' ? <span>Your last payment failed. Update the card in the Paddle portal; access continues for a 7-day grace period, then the library becomes browse-only.</span> : <span>Analysis, Ask and automations are paused; your saves are kept and exportable. Data from ended trials is deleted 30 days after the trial ends unless you upgrade.</span>}
               </div>
             )}
             {waiting && <div className="mt-3 flex items-center gap-2 rounded-xl border border-accent/30 bg-accent-soft/50 px-3 py-2 text-[12.5px]"><RefreshCw size={13} className="animate-spin text-accent" /> Payment received — waiting for Paddle to confirm your plan…</div>}
@@ -98,7 +94,7 @@ export default function Billing() {
 
           {/* Usage */}
           <div className="card p-5 mb-4">
-            <div className="flex items-center justify-between mb-4"><div><div className="eyebrow mb-0.5">Usage</div><h3 className="text-[15px] font-semibold">This month on {planName(eff)}</h3></div><span className="text-[12px] text-muted">Monthly counters reset on the 1st (UTC). Harvests reset daily.</span></div>
+            <div className="flex items-center justify-between mb-4"><div><div className="eyebrow mb-0.5">Usage</div><h3 className="text-[15px] font-semibold">This month on {planName(eff)}</h3></div><span className="text-[12px] text-muted text-right">Monthly counters reset on the 1st (UTC); harvests reset daily.</span></div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-5">
               <UsageBar label="Saves analyzed · total" meter={u?.analyze} hint={isUnlimited(u?.analyze?.limit) ? 'No cap on this plan' : `${fmtLimit(u?.analyze?.limit)} included for the life of the plan`} />
               <UsageBar label="Saves analyzed · this month" meter={u?.analyzeMonth} hint={u?.analyzeMonth && u.analyzeMonth.limit === 0 ? 'No new analysis on this plan' : undefined} />
@@ -122,27 +118,31 @@ export default function Billing() {
           <div className="grid md:grid-cols-2 gap-4">
             <div className="card-flat p-5">
               <div className="flex items-center gap-2 mb-1"><Download size={15} className="text-accent" /><h3 className="text-[14px] font-semibold">Take your data with you</h3></div>
-              <p className="text-[12.5px] text-muted leading-relaxed">Everything — analyses, transcripts, tags, notes — exports from the Library page as JSON, CSV, Markdown or an Obsidian vault, on every plan, at any time.</p>
-              <a href="/api/export?format=json" className="btn btn-sm mt-3"><Download size={13} /> Export JSON now</a>
+              <p className="text-[12.5px] text-muted leading-relaxed">Analyses, transcripts, tags and notes export as JSON, CSV, Markdown or an Obsidian vault on every plan, at any time (other formats are on the Library page).</p>
+              <a href="/api/export?format=json" className="btn btn-sm mt-3"><Download size={13} /> Export JSON</a>
             </div>
             {plan.plan !== 'owner' && (
               <div className="card-flat p-5 border-danger/30">
                 <div className="flex items-center gap-2 mb-1"><Trash2 size={15} className="text-danger" /><h3 className="text-[14px] font-semibold">Delete account</h3></div>
-                <p className="text-[12.5px] text-muted leading-relaxed">Wipes your saves, media, analyses and settings from our servers and cancels any subscription. This cannot be undone — export first.</p>
-                <button onClick={() => { setConfirmText(''); setConfirmDelete(true); }} className="btn btn-danger btn-sm mt-3"><Trash2 size={13} /> Delete my account…</button>
+                <p className="text-[12.5px] text-muted leading-relaxed">Removes your saves, media, analyses and settings from our servers and cancels any subscription. This cannot be undone, so export first.</p>
+                <button onClick={() => { setConfirmText(''); setConfirmDelete(true); }} className="btn btn-danger btn-sm mt-3"><Trash2 size={13} /> Delete my account</button>
               </div>
             )}
           </div>
         </>
       ) : (
-        <div className="card-flat p-6 text-[13px] text-muted">Billing is only available on the hosted version of Resurfly.</div>
+        <div className="card-flat border-dashed p-10 text-center flex flex-col items-center gap-3">
+          <CreditCard size={24} className="text-muted" />
+          <div className="display text-[22px]">No billing on this server</div>
+          <div className="text-[13px] text-muted max-w-md">Plans and usage limits only exist on the hosted version of Resurfly; a self-hosted install has no caps.</div>
+        </div>
       )}
 
       <Modal open={confirmDelete} onClose={() => setConfirmDelete(false)} width="max-w-md">
         <div className="p-6">
           <div className="eyebrow mb-1">Danger zone</div>
           <h3 className="display text-[24px] mb-2">Delete this account?</h3>
-          <p className="text-[13px] text-ink-2 leading-relaxed">All saves, media, analyses, automation rules and settings will be removed. Any active subscription is canceled. Type <code className="font-mono">DELETE</code> to confirm.</p>
+          <p className="text-[13px] text-ink-2 leading-relaxed">All saves, media, analyses, automation rules and settings will be removed and any active subscription canceled. Type <code className="font-mono">DELETE</code> to confirm.</p>
           <input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} className="input mt-4 font-mono" placeholder="DELETE" autoFocus />
           <div className="mt-4 flex justify-end gap-2">
             <button onClick={() => setConfirmDelete(false)} className="btn">Cancel</button>

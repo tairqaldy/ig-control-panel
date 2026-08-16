@@ -157,9 +157,9 @@ export function ItemModal() {
             {modal.history.length > 1 && <button onClick={modal.back} className="btn btn-ghost btn-sm mb-2 -ml-2"><ArrowLeft size={14} /> Back</button>}
             {a ? (
               <>
-                <div className="flex items-center gap-2 text-[12px] text-muted mb-2 pr-8">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted mb-2 pr-8">
                   <span className="inline-flex items-center gap-1.5 text-ink-2"><CategoryDot category={a.category} />{a.category}</span>
-                  {a.subcategory && <><span>·</span><span className="truncate">{a.subcategory}</span></>}
+                  {a.subcategory && <><span>·</span><span>{a.subcategory}</span></>}
                   <span>·</span><span>{CONTENT_TYPE_LABEL[a.content_type] || a.content_type}</span>
                   <span className="ml-auto font-mono text-[10.5px] shrink-0" title="Usefulness score out of 10">{a.usefulness_score}/10{a.is_evergreen ? ' · evergreen' : ''}</span>
                 </div>

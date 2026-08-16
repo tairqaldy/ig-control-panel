@@ -100,6 +100,8 @@ export function matches(rule: Rule, text: string): boolean {
   const kws = j<string[]>(rule.keywords, []).map((k) => k.trim()).filter(Boolean);
   const t = (text || '').trim();
   if (rule.trigger_type === 'dm_any' || rule.trigger_type === 'comment_any') return true;
+  // A story reply is already a strong signal on its own: a story_reply rule with no keywords answers every reply.
+  if (rule.trigger_type === 'story_reply' && !kws.length) return true;
   if (!kws.length) return false;
   const lower = t.toLowerCase();
   switch (rule.match_mode) {

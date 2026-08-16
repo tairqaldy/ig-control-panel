@@ -42,7 +42,7 @@ export function AnalyticsVignette({ className }: { className?: string }) {
   const delta = followers[DAYS - 1] - followers[0];
 
   return (
-    <div ref={ref} className={cn('mk-dark card p-4 text-[13px]', className)} aria-label="Analytics: followers, reach and saves for the last 30 days, with a chart">
+    <div ref={ref} role="img" className={cn('mk-dark card p-4 text-[13px]', className)} aria-label="Analytics: followers, reach and saves for the last 30 days, with a chart">
       <div className="flex items-center justify-between mb-3">
         <div className="eyebrow">Analytics · last 30 days</div>
         <span className="font-mono text-[10px] uppercase tracking-wider text-warn bg-warn-soft rounded px-1.5 py-0.5">Sample</span>

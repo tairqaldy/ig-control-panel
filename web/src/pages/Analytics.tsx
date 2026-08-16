@@ -41,14 +41,14 @@ async function fetchAnalytics(range: AnalyticsRange): Promise<AnalyticsResponse 
 function Kpi({ label, value, hint, delta, icon: Icon, index, primary = false, className }: { label: string; value: string; hint?: string; delta?: number | null; icon: typeof Users; index: number; primary?: boolean; className?: string }) {
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.04 }} className={cn('card p-4 min-w-0', className)}>
-      <div className="flex items-center justify-between gap-2"><span className="eyebrow truncate">{label}</span><Icon size={13} className={cn('shrink-0', primary ? 'text-accent' : 'text-muted')} /></div>
+      <div className="flex items-center justify-between gap-2"><span className="eyebrow whitespace-nowrap">{label}</span>{primary && <Icon size={13} className="shrink-0 text-accent" />}</div>
       <div className="mt-1.5 flex items-baseline gap-2 min-w-0">
         <span className={cn('display leading-none tabular truncate', primary ? 'text-[32px] text-ink' : 'text-[26px] text-ink-2')}>{value}</span>
         {delta !== undefined && delta !== null && delta !== 0 && (
           <span className={cn('inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 font-mono text-[11.5px] tabular', delta > 0 ? 'text-accent bg-accent-soft' : 'text-danger bg-danger-soft')}>{delta > 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}{delta > 0 ? '+' : ''}{fmtNum(delta)}</span>
         )}
       </div>
-      {hint && <div className="mt-1 text-[11.5px] text-muted truncate tabular">{hint}</div>}
+      {hint && <div className="mt-1 text-[11.5px] text-muted tabular leading-snug clamp-2">{hint}</div>}
     </motion.div>
   );
 }
@@ -141,14 +141,14 @@ export default function Analytics() {
             : 'Followers, reach, best time to post, what gets saved. Numbers from the Instagram Graph API for your professional account.'}
         actions={<>
           <Tabs value={String(range)} onChange={(v) => setRange(Number(v) as AnalyticsRange)} tabs={rangeTabs} />
-          {isDemo ? <ConnectCta size="md" /> : <button onClick={() => refresh.mutate()} disabled={refresh.isPending || unavailable} className="btn"><RefreshCw size={14} className={cn(refresh.isPending && 'animate-spin')} /> Refresh</button>}
+          {isDemo ? (demoDismissed && <ConnectCta size="md" />) : <button onClick={() => refresh.mutate()} disabled={refresh.isPending || unavailable} className="btn"><RefreshCw size={14} className={cn(refresh.isPending && 'animate-spin')} /> Refresh</button>}
         </>} />
 
       {/* demo banner: honest, dismissible for this session */}
       {isDemo && !demoDismissed && (
         <div className="mb-5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-warn/40 bg-warn-soft/60 px-3.5 py-2 text-[12.5px] rise" role="status">
           <Sparkles size={14} className="text-warn shrink-0" />
-          <span className="text-ink-2 min-w-0 flex-1">You are looking at sample data. Connect a professional Instagram account and this page fills with your own followers, reach and posts within a minute.</span>
+          <span className="text-ink-2 flex-1 min-w-[220px]">You are looking at sample data. Connect a professional Instagram account and this page fills with your own followers, reach and posts within a minute.</span>
           <span className="flex items-center gap-1 ml-auto"><ConnectCta /><button onClick={dismissDemo} className="btn btn-ghost btn-sm !px-1.5 text-muted" aria-label="Hide this note"><X size={14} /></button></span>
         </div>
       )}
@@ -166,19 +166,19 @@ export default function Analytics() {
       )}
 
       {data && vm && data.connected && !data.demo && vm.media.length === 0 && (vm.series.days?.length ?? 0) === 0 && (
-        <div className="card-flat p-5 mb-5 flex flex-wrap items-center gap-3 text-[13px]"><Clock size={15} className="text-accent" /><span className="text-ink-2">Connected — the first refresh is filling in your numbers. It takes about a minute for a typical account.</span><button onClick={() => refresh.mutate()} disabled={refresh.isPending} className="btn btn-sm ml-auto"><RefreshCw size={13} className={cn(refresh.isPending && 'animate-spin')} /> Refresh now</button></div>
+        <div className="card-flat p-5 mb-5 flex flex-wrap items-center gap-3 text-[13px]"><Clock size={15} className="text-accent" /><span className="text-ink-2">Connected. The first refresh is pulling your numbers from Instagram; it takes about a minute, then this page fills in on its own.</span><button onClick={() => refresh.mutate()} disabled={refresh.isPending} className="btn btn-sm ml-auto"><RefreshCw size={13} className={cn(refresh.isPending && 'animate-spin')} /> Refresh now</button></div>
       )}
 
       {data && vm && (
         <>
           {/* KPI row */}
-          <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-5">
-            <Kpi index={0} primary className="lg:col-span-2" label="Followers" value={vm.followers != null ? fmtNum(vm.followers) : '—'} delta={vm.followerDelta} hint={vm.followerDelta !== null ? `change over the last ${range} days` : `last ${range} days`} icon={Users} />
-            <Kpi index={1} primary className="lg:col-span-2" label="Reach" value={fmtNum(vm.reachTotal)} hint={`accounts reached in ${range} days`} icon={Eye} />
-            <Kpi index={2} label="Interactions" value={fmtNum(vm.totals?.interactions ?? 0)} hint={`${fmtNum(vm.totals?.likes ?? 0)} likes · ${fmtNum(vm.totals?.comments ?? 0)} comments`} icon={Heart} />
-            <Kpi index={3} label="Saves" value={fmtNum(vm.totals?.saves ?? 0)} hint={`${fmtNum(vm.totals?.shares ?? 0)} shares`} icon={Bookmark} />
-            <Kpi index={4} label="Profile views" value={fmtNum(vm.totals?.profileViews ?? 0)} hint={`${fmtNum(vm.totals?.websiteClicks ?? 0)} website clicks`} icon={ExternalLink} className="lg:col-span-1" />
-            <Kpi index={5} label="Accounts engaged" value={fmtNum(vm.totals?.accountsEngaged ?? 0)} hint={`of ${fmtNum(vm.reachTotal)} reached`} icon={Users} className="lg:col-span-1" />
+          {/* one row on desktop: two wider headline tiles (followers, reach) + three supporting ones; phones: headlines full-width, then pairs */}
+          <div className="grid grid-cols-2 md:grid-cols-6 lg:grid-cols-[1.4fr_1.4fr_1fr_1fr_1fr] gap-3 mb-5">
+            <Kpi index={0} primary className="col-span-2 md:col-span-3 lg:col-span-1" label="Followers" value={vm.followers != null ? fmtNum(vm.followers) : '—'} delta={vm.followerDelta} hint={vm.followerDelta !== null ? `change over the last ${range} days` : `last ${range} days`} icon={Users} />
+            <Kpi index={1} primary className="col-span-2 md:col-span-3 lg:col-span-1" label="Reach" value={fmtNum(vm.reachTotal)} hint={`accounts reached in ${range} days`} icon={Eye} />
+            <Kpi index={2} className="md:col-span-2 lg:col-span-1" label="Interactions" value={fmtNum(vm.totals?.interactions ?? 0)} hint={`${fmtNum(vm.totals?.likes ?? 0)} likes · ${fmtNum(vm.totals?.comments ?? 0)} comments`} icon={Heart} />
+            <Kpi index={3} className="md:col-span-2 lg:col-span-1" label="Saves" value={fmtNum(vm.totals?.saves ?? 0)} hint={`${fmtNum(vm.totals?.shares ?? 0)} shares`} icon={Bookmark} />
+            <Kpi index={4} className="col-span-2 md:col-span-2 lg:col-span-1" label="Profile views" value={fmtNum(vm.totals?.profileViews ?? 0)} hint={`${fmtNum(vm.totals?.websiteClicks ?? 0)} website clicks`} icon={ExternalLink} />
           </div>
 
           {/* charts */}
@@ -196,15 +196,23 @@ export default function Analytics() {
           {/* best time + content mix */}
           <div className="grid lg:grid-cols-[1.4fr_1fr] gap-4 mb-5">
             <div className="card p-5">
-              <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
-                <div><div className="eyebrow">Best time to post</div><div className="text-[13px] text-muted">engagement by weekday × hour (your time zone) · rings = when you posted</div></div>
-                <div className="text-[13px]"><Clock size={13} className="inline -mt-0.5 mr-1 text-accent" />Post on <b>{WEEKDAYS_LONG[vm.bestDay]}</b> around <b>{fmtHour(vm.bestHour)}</b></div>
+              <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 mb-3">
+                <div className="min-w-0">
+                  <div className="eyebrow mb-1">Best time to post</div>
+                  <div className="text-[16px] font-medium text-ink"><Clock size={14} className="inline -mt-0.5 mr-1.5 text-accent" />Post {slot}</div>
+                  <div className="mt-0.5 text-[12.5px] text-muted">
+                    {vm.usual && (vm.usual.day !== vm.bestDay || Math.abs(vm.usual.hour - vm.bestHour) > 1)
+                      ? <>You mostly post {WEEKDAYS[vm.usual.day]} around {fmtHour(vm.usual.hour)} — try moving one post into the darker cells.</>
+                      : vm.usual ? <>That is also when you usually post — keep it.</> : <>Engagement by weekday × hour, in your time zone. Rings mark when you posted.</>}
+                  </div>
+                </div>
+                <Link to={`/ask?q=${encodeURIComponent(`My best posting slot is ${slot}. Which of my saved ideas should I post there this week?`)}`} className="btn btn-sm shrink-0"><Sparkles size={13} className="text-accent" /> Pick a post for {fmtWeekdays([vm.bestDay])}</Link>
               </div>
               <HeatStrip cells={vm.cells} marks={vm.marks} best={{ day: vm.bestDay, hour: vm.bestHour }} />
             </div>
             <div className="card p-5 flex flex-col">
               <div className="eyebrow mb-1">Content mix</div>
-              <div className="text-[13px] text-muted mb-3">last {vm.media.length} posts</div>
+              <div className="text-[13px] text-muted mb-3">{vm.topFormatLabel ? <><span className="text-ink font-medium">Mostly {vm.topFormatLabel.toLowerCase()}</span> · last {vm.media.length} posts</> : `last ${vm.media.length} posts`}</div>
               <MixBar segments={[{ key: 'reels', label: 'Reels', value: vm.mix.reels ?? 0 }, { key: 'carousels', label: 'Carousels', value: vm.mix.carousels ?? 0 }, { key: 'images', label: 'Images', value: vm.mix.images ?? 0 }]} />
               <div className="mt-auto pt-4 grid grid-cols-2 gap-3">
                 <div className="card-flat p-3"><div className="eyebrow mb-1">Engagement rate</div><div className="display text-[24px] leading-none tabular">{fmtPct(vm.engagement)}</div><div className="text-[11px] text-muted mt-1">interactions ÷ reach, avg per post</div></div>
@@ -216,7 +224,7 @@ export default function Analytics() {
           {/* top posts */}
           <div className="card p-5 mb-5">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-              <div><div className="eyebrow">Top posts</div><div className="text-[13px] text-muted">what people kept — saves are the strongest signal you have</div></div>
+              <div><div className="eyebrow">Top posts</div><div className="text-[13px] text-muted">what people kept — saves are the strongest signal you have · click to open on Instagram</div></div>
               <Tabs value={topBy} onChange={setTopBy} tabs={[{ id: 'saves', label: 'By saves' }, { id: 'reach', label: 'By reach' }]} />
             </div>
             {(topBy === 'saves' ? vm.topSaves : vm.topReach).length ? (
@@ -267,16 +275,17 @@ export default function Analytics() {
               ) : <div className="text-[13px] text-muted">No hashtags found in the captions of this range.</div>}
             </div>
             <div className="card p-5 flex flex-col bg-accent-soft/40 border-accent/30">
-              <div className="flex items-center gap-2 mb-1"><Sparkles size={15} className="text-accent" /><h3 className="text-[15px] font-semibold">Turn this into action</h3></div>
-              <p className="text-[13px] text-ink-2 leading-relaxed">Ask reads these numbers together with your saved library — the formats you keep saving, the hooks you liked — and drafts a plan for the week.</p>
-              <ul className="mt-3 space-y-1.5 text-[12.5px] text-muted">
-                <li>· what to post on {WEEKDAYS[vm.bestDay]} at {fmtHour(vm.bestHour)}</li>
-                <li>· which of your saved ideas fit your top format</li>
-                <li>· a hook and an outline for each</li>
+              <div className="flex items-center gap-2 mb-1"><Sparkles size={15} className="text-accent" /><h3 className="text-[15px] font-semibold">Turn this into a plan for the week</h3></div>
+              <p className="text-[13px] text-ink-2 leading-relaxed">Ask combines these numbers with your saved library and returns:</p>
+              <ul className="mt-2.5 space-y-1.5 text-[12.5px] text-ink-2">
+                <li className="flex gap-2"><span className="text-accent">1.</span><span>Three post ideas{vm.topFormatLabel ? <> in your top format (<b>{vm.topFormatLabel.toLowerCase()}</b>)</> : ''}, each built on a save you kept</span></li>
+                <li className="flex gap-2"><span className="text-accent">2.</span><span>A hook and a 3-line outline for each</span></li>
+                <li className="flex gap-2"><span className="text-accent">3.</span><span>When to publish: <b>{slot}</b></span></li>
               </ul>
+              {isDemo && <div className="mt-2.5 text-[11.5px] text-muted">With sample data Ask answers from your library only; the numbers join in once Instagram is connected.</div>}
               <div className="mt-auto pt-4 flex flex-wrap gap-2">
-                <Link to={`/ask?q=${askQ}`} className="btn btn-primary"><MessageCircle size={14} /> What should I post this week? <ArrowRight size={13} /></Link>
-                <Link to={`/ask?q=${encodeURIComponent('Which of my saved reels have hooks I could adapt for my top-performing format?')}`} className="btn btn-ghost btn-sm text-muted"><Share2 size={12} /> Hooks from my saves</Link>
+                <Link to={`/ask?q=${askQ}`} className="btn btn-primary"><MessageCircle size={14} /> Plan my week in Ask <ArrowRight size={13} /></Link>
+                <Link to={`/ask?q=${encodeURIComponent(`Which of my saved reels have hooks I could adapt for my ${vm.topFormatLabel ? vm.topFormatLabel.toLowerCase() : 'top-performing format'}?`)}`} className="btn btn-ghost btn-sm text-muted"><Share2 size={12} /> Hooks from my saves</Link>
               </div>
             </div>
           </div>

@@ -27,7 +27,7 @@ export function AskVignette({ className }: { className?: string }) {
   const streaming = t >= T_STREAM && a2.length < ANSWER_2.length;
 
   return (
-    <div ref={ref} className={cn('mk-dark card p-4 text-[13px] leading-relaxed', className)} aria-label="Ask: a question typed, an answer streamed with a citation">
+    <div ref={ref} role="img" className={cn('mk-dark card p-4 text-[13px] leading-relaxed', className)} aria-label="Ask: a question typed, an answer streamed with a citation">
       <div className="flex items-center justify-between mb-3">
         <div className="eyebrow">Ask</div>
         <div className="font-mono text-[10.5px] text-muted tabular">19 / 20 questions</div>
@@ -47,7 +47,7 @@ export function AskVignette({ className }: { className?: string }) {
         </div>
       </div>
       {/* answer */}
-      <div className={cn('mt-3 rounded-xl border border-line bg-surface-2 px-3.5 py-3 min-h-[122px] sm:min-h-[104px] transition-opacity duration-300', t >= T_STREAM - 300 ? 'opacity-100' : 'opacity-0')} aria-live="polite">
+      <div className={cn('mt-3 rounded-xl border border-line bg-surface-2 px-3.5 py-3 min-h-[122px] sm:min-h-[104px] transition-opacity duration-300', t >= T_STREAM - 300 ? 'opacity-100' : 'opacity-0')}>
         {t < T_STREAM ? (
           <span className="inline-flex items-center gap-2 text-muted"><span className="h-1.5 w-1.5 rounded-full bg-accent pulse-dot" /> Reading 2 saves…</span>
         ) : (

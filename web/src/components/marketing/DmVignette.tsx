@@ -20,7 +20,7 @@ export function DmVignette({ className }: { className?: string }) {
   const sent = t >= T_SENT;
 
   return (
-    <div ref={ref} className={cn('mk-dark card p-4 text-[13px]', className)} aria-label="Automation: a comment with the word link gets an automatic direct message with the link">
+    <div ref={ref} role="img" className={cn('mk-dark card p-4 text-[13px]', className)} aria-label="Automation: a comment with the word link gets an automatic direct message with the link">
       {/* the rule */}
       <div className="flex items-center gap-2.5 rounded-xl border border-line bg-surface-2 px-3 py-2">
         <span className="h-7 w-7 grid place-items-center rounded-lg bg-accent-soft text-accent shrink-0"><Zap size={13} /></span>

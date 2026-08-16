@@ -3,6 +3,7 @@
    lands in the app bundle. The wrapper (`.marketing` in styles.css) pins the light tokens whatever the app theme. */
 import { type ReactNode, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
+import { MotionConfig } from 'motion/react';
 import { ArrowRight, Menu, X, ChevronDown, Check } from 'lucide-react';
 import type { PlanCatalogEntry } from '../lib/types';
 import { cn } from '../lib/utils';
@@ -32,7 +33,8 @@ export function Github({ size = 14, className }: { size?: number; className?: st
 /** Light editorial paper for every public page, independent of the app's dark/light toggle. */
 export function MarketingPage({ children, className }: { children: ReactNode; className?: string }) {
   // overflow-x-clip (not hidden): keeps the hero glow / river from widening the page without breaking the sticky header
-  return <div className={cn('marketing z-[1] min-h-full flex flex-col overflow-x-clip', className)}>{children}</div>;
+  // reducedMotion="user": motion/react drops transform/layout animations (keeps opacity) when the OS asks for less motion
+  return <MotionConfig reducedMotion="user"><div className={cn('marketing z-[1] min-h-full flex flex-col overflow-x-clip', className)}>{children}</div></MotionConfig>;
 }
 
 /* ---------------- Header / footer ---------------- */

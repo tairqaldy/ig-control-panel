@@ -66,15 +66,16 @@ export default function Settings() {
 
   return (
     <div className="max-w-3xl">
-      <PageHeader eyebrow="Settings" title="Configuration" subtitle={hostedTenant ? 'Your integrations, devices and data. The OpenAI key and models are managed by the hosted service.' : 'Values set as environment variables on the server take precedence and are shown locked. Everything else is stored in the app database.'} actions={<button onClick={() => save.mutate()} disabled={save.isPending} className="btn btn-primary"><Save size={14} /> Save</button>} />
+      <PageHeader eyebrow="Settings" title={hostedTenant ? 'Integrations and data' : 'Integrations, engine and data'} subtitle={hostedTenant ? 'Instagram, paired devices and exports. Models and the OpenAI key are managed by the hosted service.' : 'Values set as server environment variables are shown locked; everything else is stored in the app database.'} actions={<button onClick={() => save.mutate()} disabled={save.isPending} className="btn btn-primary"><Save size={14} className={cn(save.isPending && 'animate-pulse')} /> Save changes</button>} />
 
       {/* ---------------- Integrations ---------------- */}
       <div id="integrations" className="eyebrow mb-2 scroll-mt-20">Integrations</div>
       <section className="card p-6 mb-4">
-        <div className="flex items-center gap-2 mb-4"><InstagramGlyph size={16} className="text-accent" /><h2 className="text-[15px] font-semibold">Instagram</h2><span className="ml-auto text-[12px] text-muted">{e?.meta?.configured ? 'credentials in place' : 'not connected'}</span></div>
+        <div className="flex items-center gap-2 mb-4"><InstagramGlyph size={16} className="text-accent" /><h2 className="text-[15px] font-semibold">Instagram</h2><span className="ml-auto text-[12px] text-muted">{e?.meta?.configured ? 'Credentials in place' : 'Not connected'}</span></div>
         <ConnectCard compact showSettingsLink={false} className="mb-3 !shadow-none border-line" />
-        <Disclosure id="automations" title="Bring your own Meta app" hint={hostedTenant ? 'advanced' : 'self-host / advanced'} open={metaOpen} onToggle={() => setMetaOpen((o) => !o)}>
-          <p className="text-[12.5px] text-muted mb-4 leading-relaxed">For self-hosters and anyone who prefers their own Meta app: paste the values from your Meta app → Instagram → API setup with Instagram login. See <a className="text-accent underline" href="https://github.com/tairqaldy/resurfly/blob/main/docs/AUTOMATIONS.md" target="_blank" rel="noreferrer">docs/AUTOMATIONS.md</a>. Webhook URL: <code className="font-mono">{e?.publicUrl || window.location.origin}/api/webhooks/instagram</code></p>
+        <Disclosure id="automations" title="Bring your own Meta app" hint={hostedTenant ? 'Advanced' : 'Self-host'} open={metaOpen} onToggle={() => setMetaOpen((o) => !o)}>
+          <p className="text-[12.5px] text-muted mb-1 leading-relaxed">Paste the values from your Meta app → Instagram → API setup with Instagram login (<a className="text-accent underline" href="https://github.com/tairqaldy/resurfly/blob/main/docs/AUTOMATIONS.md" target="_blank" rel="noreferrer">guide</a>).</p>
+          <p className="text-[12.5px] text-muted mb-4 leading-relaxed">Webhook URL: <code className="font-mono select-all">{e?.publicUrl || window.location.origin}/api/webhooks/instagram</code></p>
           <div className="grid sm:grid-cols-2 gap-4">
             <Field label="Instagram user ID" hint="From GET /me?fields=user_id — the numeric professional account id."><input value={f.ig_user_id || ''} onChange={(ev) => set('ig_user_id', ev.target.value)} disabled={e?.meta?.envLocked?.igUserId} className="input font-mono" placeholder="1784…" /></Field>
             <Field label="Verify token" hint="Any string you choose; paste the same in the Meta webhook config."><input value={f.meta_verify_token || ''} onChange={(ev) => set('meta_verify_token', ev.target.value)} disabled={e?.meta?.envLocked?.verifyToken} className="input font-mono" placeholder="resurfly-verify-…" /></Field>
@@ -82,30 +83,30 @@ export default function Settings() {
             <Field label="App secret" hint="Used to verify webhook signatures. Recommended."><input value={f.meta_app_secret || ''} onChange={(ev) => set('meta_app_secret', ev.target.value)} disabled={e?.meta?.envLocked?.appSecret} className="input font-mono" placeholder="••••" /></Field>
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <button onClick={() => save.mutate()} disabled={save.isPending} className="btn btn-sm btn-primary"><Save size={13} /> Save</button>
-            <button onClick={() => testMeta.mutate()} className="btn btn-sm"><FlaskConical size={13} /> Test Meta connection</button>
+            <button onClick={() => testMeta.mutate()} disabled={testMeta.isPending} className="btn btn-sm"><FlaskConical size={13} className={cn(testMeta.isPending && 'animate-pulse')} /> Test connection</button>
             <a href="https://developers.facebook.com/apps" target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm text-muted"><ExternalLink size={12} /> Meta for Developers</a>
+            <span className="text-[12px] text-muted sm:ml-auto">Saved with “Save changes” above.</span>
           </div>
         </Disclosure>
       </section>
 
       <section id="companion" className="card p-6 mb-4 scroll-mt-20">
         <div className="flex items-center gap-2 mb-1"><Laptop size={16} className="text-accent" /><h2 className="text-[15px] font-semibold">Companion</h2><Link to="/import" className="ml-auto btn btn-ghost btn-sm text-muted">Pair a device <ArrowRight size={12} /></Link></div>
-        <p className="text-[12.5px] text-muted mb-4 leading-relaxed">Chrome devices paired to this workspace. “Harvests in background” means that device opted in to server-side harvesting: its Instagram session is stored here encrypted so saves keep syncing while the browser is closed. Turn it off to delete the stored session; remove a device to revoke its token entirely.</p>
-        <CompanionDevices emptyHint="No devices paired. Install the Companion from the Import page and pair it with a code." />
+        <p className="text-[12.5px] text-muted mb-4 leading-relaxed">Chrome devices paired to this workspace. “Harvests in background” means the device stores its Instagram session here, encrypted, so saves keep syncing while the browser is closed; turn it off to delete that session, or remove the device to revoke it.</p>
+        <CompanionDevices emptyHint="No devices paired yet. Install the Companion from the Import page and pair it with a code." />
       </section>
 
       <section id="data" className="card p-6 mb-6 scroll-mt-20">
         <div className="flex items-center gap-2 mb-1"><Download size={16} className="text-accent" /><h2 className="text-[15px] font-semibold">Data</h2></div>
-        <p className="text-[12.5px] text-muted mb-3 leading-relaxed">Everything you have — analyses, transcripts, tags, notes — exports at any time. Filtered exports live on the Library page.</p>
+        <p className="text-[12.5px] text-muted mb-3 leading-relaxed">Export everything (analyses, transcripts, tags, notes) at any time; filtered exports are on the Library page.</p>
         <div className="flex flex-wrap gap-2">
           {[['json', 'JSON'], ['csv', 'CSV'], ['md', 'Markdown digest'], ['obsidian', 'Obsidian vault (ZIP)']].map(([fmt, label]) => <a key={fmt} href={`/api/export?format=${fmt}`} className="btn btn-sm"><Download size={12} /> {label}</a>)}
         </div>
         {hostedTenant && (
           <div className="mt-5 rounded-xl border border-danger/30 p-4">
             <div className="flex items-center gap-2 mb-1"><Trash2 size={14} className="text-danger" /><h3 className="text-[13.5px] font-semibold">Delete account</h3></div>
-            <p className="text-[12.5px] text-muted leading-relaxed">Wipes your saves, media, analyses, rules and settings from our servers and cancels any subscription. This cannot be undone — export first.</p>
-            <button onClick={() => { setConfirmText(''); setConfirmDelete(true); }} className="btn btn-danger btn-sm mt-3"><Trash2 size={13} /> Delete my account…</button>
+            <p className="text-[12.5px] text-muted leading-relaxed">Removes your saves, media, analyses, rules and settings from our servers and cancels any subscription. This cannot be undone, so export first.</p>
+            <button onClick={() => { setConfirmText(''); setConfirmDelete(true); }} className="btn btn-danger btn-sm mt-3"><Trash2 size={13} /> Delete my account</button>
           </div>
         )}
       </section>
@@ -117,7 +118,7 @@ export default function Settings() {
           <section className="card p-6 mb-4">
             <div className="flex items-center gap-2 mb-4"><KeyRound size={16} className="text-accent" /><h2 className="text-[15px] font-semibold">OpenAI</h2><span className="ml-auto text-[12px] text-muted">{e?.openai}</span></div>
             <div className="grid gap-4">
-              <Field label="API key" hint={locked('openai_api_key') ? 'Set via OPENAI_API_KEY env var.' : 'Stored in the database on your volume. Leave blank to remove.'}>
+              <Field label="API key" hint={locked('openai_api_key') ? 'Set by the OPENAI_API_KEY environment variable.' : 'Stored in the database on your volume; leave blank to remove.'}>
                 <input value={f.openai_api_key || ''} onChange={(ev) => set('openai_api_key', ev.target.value)} disabled={locked('openai_api_key')} className="input font-mono" placeholder="sk-…" />
               </Field>
               <div className="grid sm:grid-cols-3 gap-4">
@@ -131,7 +132,7 @@ export default function Settings() {
 
           <section className="card p-6 mb-4">
             <div className="flex items-center gap-2 mb-4"><Cpu size={16} className="text-accent" /><h2 className="text-[15px] font-semibold">Pipeline</h2></div>
-            <Field label={`Concurrency: ${conc} item${conc > 1 ? 's' : ''} at a time`} hint="Higher = faster, but more likely to hit OpenAI rate limits on new accounts. 2–4 is a good range.">
+            <Field label={`Concurrency: ${conc} save${conc > 1 ? 's' : ''} at a time`} hint="Higher is faster but more likely to hit OpenAI rate limits on new accounts; 2–4 is a good range.">
               <input type="range" min={1} max={8} value={conc} onChange={(ev) => setConc(Number(ev.target.value))} className="w-full accent-[var(--accent)]" />
             </Field>
             <div className="mt-3 grid sm:grid-cols-2 gap-2 text-[12.5px] text-muted">
@@ -140,7 +141,7 @@ export default function Settings() {
               <div>data dir: <code className="font-mono text-ink">{e?.dataDir}</code></div>
               <div>public URL: <code className="font-mono text-ink">{e?.publicUrl || '(auto)'}</code></div>
             </div>
-            <div className="mt-4 flex items-center gap-2"><button onClick={() => reindex.mutate()} className="btn btn-sm"><RefreshCw size={13} className={reindex.isPending ? 'animate-spin' : ''} /> Rebuild search index & similarity</button><span className="text-[12px] text-muted">Safe to run anytime.</span></div>
+            <div className="mt-4 flex items-center gap-2"><button onClick={() => reindex.mutate()} disabled={reindex.isPending} className="btn btn-sm"><RefreshCw size={13} className={reindex.isPending ? 'animate-spin' : ''} /> Rebuild search index</button><span className="text-[12px] text-muted">Also refreshes similarity; safe to run any time.</span></div>
           </section>
         </>
       )}
@@ -152,7 +153,7 @@ export default function Settings() {
           <div className="card-flat p-3"><div className="eyebrow mb-1">Database</div><div className="display text-[22px]">{q.data ? fmtBytes(q.data.storage.dbBytes) : '—'}</div></div>
           <div className="card-flat p-3"><div className="eyebrow mb-1">Version</div><div className="display text-[22px]">v{q.data?.version}</div></div>
         </div>
-        {!hostedTenant && <div className="mt-3 text-[12px] text-muted">Thumbnails (~30 KB each) and video frames are kept; videos are discarded after transcription unless KEEP_VIDEOS=true. Back up the data directory to keep everything.</div>}
+        {!hostedTenant && <div className="mt-3 text-[12px] text-muted">Thumbnails and video frames are kept; videos are discarded after transcription unless KEEP_VIDEOS=true. Back up the data directory to keep everything.</div>}
         {hostedTenant && <div className="mt-3 text-[12px] text-muted inline-flex items-center gap-1.5"><Plug size={12} /> Hosted workspace #{auth.tenantId} · <Link to="/billing" className="underline hover:text-ink">plan and usage</Link></div>}
       </section>
 
@@ -160,7 +161,7 @@ export default function Settings() {
         <div className="p-6">
           <div className="eyebrow mb-1">Danger zone</div>
           <h3 className="display text-[24px] mb-2">Delete this account?</h3>
-          <p className="text-[13px] text-ink-2 leading-relaxed">All saves, media, analyses, automation rules and settings will be removed. Any active subscription is canceled. Type <code className="font-mono">DELETE</code> to confirm.</p>
+          <p className="text-[13px] text-ink-2 leading-relaxed">All saves, media, analyses, automation rules and settings will be removed and any active subscription canceled. Type <code className="font-mono">DELETE</code> to confirm.</p>
           <input value={confirmText} onChange={(ev) => setConfirmText(ev.target.value)} className="input mt-4 font-mono" placeholder="DELETE" autoFocus />
           <div className="mt-4 flex justify-end gap-2">
             <button onClick={() => setConfirmDelete(false)} className="btn">Cancel</button>

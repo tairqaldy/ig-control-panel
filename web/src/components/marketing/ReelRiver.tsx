@@ -23,7 +23,7 @@ export function ReelRiver({ className }: { className?: string }) {
   }, [reels]);
   // Reserve the height even before reels.json arrives so nothing below jumps.
   return (
-    <div className={cn('space-y-3', className)} aria-label="Real saved posts from the founder's library, some flipped to the note Resurfly wrote about them">
+    <div role="group" className={cn('space-y-3', className)} aria-label="Real saved posts from the founder's library, some flipped to the note Resurfly wrote about them">
       {rows ? (
         <>
           <Row reels={rows[0]} dir="left" seed={2} />
@@ -84,7 +84,7 @@ function Card({ reel, flipped }: { reel: Reel; flipped: boolean }) {
     <div className="mk-flip h-[165px] w-[132px] sm:h-[200px] sm:w-[160px] shrink-0" data-flipped={flipped}>
       {/* front: the real thumbnail */}
       <div className="absolute inset-0 overflow-hidden rounded-xl bg-[#1a1a18] ring-1 ring-black/10">
-        <img src={reel.file} alt="" width={CARD_W} height={CARD_H} loading="lazy" decoding="async" className="h-full w-full object-cover" draggable={false} />
+        <img src={reel.file} alt="" width={CARD_W} height={CARD_H} loading="lazy" decoding="async" className="h-full w-full object-cover" draggable={false} onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} />
         <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/45 to-transparent" />
         <span className="absolute left-2 bottom-2 inline-flex items-center gap-1 rounded-md bg-black/50 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur">
           {reel.type === 'carousel' ? <Images size={10} /> : reel.type === 'video' ? <Play size={10} className="fill-white" /> : null}

@@ -36,7 +36,7 @@ function SaveNote({ s, i }: { s: LandingSave; i: number }) {
       {/* thumb → meta */}
       <div className="flex items-start gap-3.5">
         <div className="relative shrink-0 h-[110px] w-[88px] rounded-lg overflow-hidden ring-1 ring-black/10 -rotate-2 bg-[#1a1a18]" style={{ boxShadow: 'var(--shadow)' }}>
-          <img src={s.thumb} alt="" width={640} height={800} loading="lazy" decoding="async" className="h-full w-full object-cover" />
+          <img src={s.thumb} alt="" width={640} height={800} loading="lazy" decoding="async" className="h-full w-full object-cover" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} />
           <span className="absolute left-1.5 bottom-1.5 inline-flex items-center gap-1 rounded bg-black/55 px-1 py-0.5 text-[9.5px] font-medium text-white">
             {s.media_type === 'carousel' ? <Images size={9} /> : <Play size={9} className="fill-white" />}{s.media_type === 'video' && s.duration ? fmtDuration(s.duration) : kind}
           </span>

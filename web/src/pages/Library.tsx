@@ -27,7 +27,7 @@ const EXPORTS = [{ id: 'json', label: 'JSON (full data)' }, { id: 'csv', label: 
 const FILTER_KEYS = ['category', 'tag', 'author', 'type', 'content_type', 'collection', 'status', 'favorite', 'evergreen', 'archived', 'excluded', 'min_useful'] as const;
 
 const WIDTHS: Record<string, number> = { 'w-40': 160, 'w-44': 176, 'w-48': 192, 'w-52': 208, 'w-56': 224, 'w-60': 240, 'w-64': 256 };
-function Dropdown({ label, value, options, onChange, icon, width = 'w-56', allLabel = 'All', hideAll }: { label: string; value: string; options: Array<{ id: string; label: string; n?: number }>; onChange: (v: string) => void; icon?: React.ReactNode; width?: string; allLabel?: string; hideAll?: boolean }) {
+function Dropdown({ label, value, options, onChange, icon, width = 'w-56', allLabel = 'All', hideAll, plain }: { label: string; value: string; options: Array<{ id: string; label: string; n?: number }>; onChange: (v: string) => void; icon?: React.ReactNode; width?: string; allLabel?: string; hideAll?: boolean; plain?: boolean }) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
@@ -36,7 +36,7 @@ function Dropdown({ label, value, options, onChange, icon, width = 'w-56', allLa
   const close = useCallback(() => { setOpen(false); setFilter(''); }, []);
   return (
     <>
-      <button ref={setAnchor} onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="listbox" className={cn('btn btn-sm max-w-full', value && 'chip-active border-accent')}>{icon}<span className="truncate">{current ? current.label : label}</span><ChevronDown size={13} className={cn('text-muted transition-transform shrink-0', open && 'rotate-180')} /></button>
+      <button ref={setAnchor} onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="listbox" className={cn('btn btn-sm max-w-full', value && !plain && 'chip-active border-accent')}>{icon}<span className="truncate">{current ? current.label : label}</span><ChevronDown size={13} className={cn('text-muted transition-transform shrink-0', open && 'rotate-180')} /></button>
       <Popover anchor={anchor} open={open} onClose={close} width={WIDTHS[width] || 224}>
         {options.length > 8 && <input autoFocus value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Type to filter" className="input !py-1.5 mb-1 !rounded-lg" />}
         {!hideAll && <button onClick={() => { onChange(''); close(); }} className={cn('flex w-full items-center rounded-lg px-2.5 py-1.5 text-left text-[13px] hover:bg-surface-2', !value && 'text-accent')}>{allLabel}</button>}
@@ -145,7 +145,7 @@ export default function Library() {
       {/* Search + sort + filters disclosure */}
       <div className="sticky top-14 lg:top-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-3 mb-4 bg-bg/85 backdrop-blur border-b border-line/60">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[200px] max-w-xl">
+          <div className="relative w-full sm:w-auto sm:flex-1 sm:min-w-[220px] sm:max-w-xl">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
             <input value={qInput} onChange={(e) => setQInput(e.target.value)} placeholder="Search titles, transcripts, tags…" aria-label="Search saves" className="input !pl-9 !pr-28" />
             <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
@@ -153,7 +153,7 @@ export default function Library() {
               <button onClick={() => setSemantic((s) => !s)} aria-pressed={semantic} className={cn('btn btn-sm !py-1', semantic ? 'chip-active border-accent' : '')} title={semantic ? 'Also matching by meaning. Click for exact words only.' : 'Exact words only. Click to also match by meaning.'}><Brain size={12} /> meaning</button>
             </div>
           </div>
-          <Dropdown label="Sort" value={get('sort') || 'saved'} options={SORTS} onChange={(v) => set({ sort: v })} icon={<ArrowUpDown size={13} />} width="w-48" hideAll />
+          <Dropdown label="Sort" value={get('sort') || 'saved'} options={SORTS} onChange={(v) => set({ sort: v })} icon={<ArrowUpDown size={13} />} width="w-48" hideAll plain />
           <button onClick={() => setFiltersOpen((o) => !o)} aria-expanded={filtersOpen} className={cn('btn btn-sm', (filtersOpen || activeFilters.length > 0) && 'chip-active border-accent')}>
             <Filter size={13} /> Filters{activeFilters.length > 0 && <span className="font-mono text-[10.5px] rounded-full bg-accent text-accent-ink px-1.5 leading-[16px]">{activeFilters.length}</span>}
             <ChevronDown size={13} className={cn('text-muted transition-transform', filtersOpen && 'rotate-180')} />

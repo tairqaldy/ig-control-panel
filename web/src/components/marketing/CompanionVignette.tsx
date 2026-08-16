@@ -6,7 +6,7 @@ import { cn } from '../../lib/utils';
 
 export function CompanionVignette({ className }: { className?: string }) {
   return (
-    <div className={cn('grid gap-3 sm:grid-cols-[1fr_auto_1fr] items-center', className)} aria-label="The Companion extension in the browser sends new saves to Resurfly every six hours">
+    <div role="img" className={cn('grid gap-3 sm:grid-cols-[1fr_auto_1fr] items-center', className)} aria-label="The Companion extension in the browser sends new saves to Resurfly every six hours">
       {/* extension popup */}
       <div className="card p-3.5 text-[12.5px] min-w-0">
         <div className="flex items-center gap-2 mb-3">
