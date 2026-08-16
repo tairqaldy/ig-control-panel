@@ -1,0 +1,174 @@
+import OpenAI, { toFile } from 'openai';
+import { config } from '../config.js';
+import { getSetting } from '../db.js';
+
+let _client: OpenAI | null = null;
+let _clientKey = '';
+
+export function apiKey(): string {
+  return config.openaiApiKey || getSetting('openai_api_key') || '';
+}
+
+export function hasOpenAI(): boolean {
+  return apiKey().length > 10;
+}
+
+export function openai(): OpenAI {
+  const key = apiKey();
+  if (!key) throw new Error('OPENAI_API_KEY is not configured. Set it as an environment variable or in Settings.');
+  if (_client && _clientKey === key) return _client;
+  _client = new OpenAI({ apiKey: key, baseURL: config.openaiBaseUrl, maxRetries: 4, timeout: 180_000 });
+  _clientKey = key;
+  return _client;
+}
+
+export function models() {
+  return {
+    analysis: getSetting('analysis_model') || config.analysisModel,
+    ask: getSetting('ask_model') || config.askModel,
+    transcribe: getSetting('transcribe_model') || config.transcribeModel,
+    embed: config.embedModel,
+  };
+}
+
+/** GPT-5-family / o-series accept `reasoning` and reject `temperature`. */
+export function isReasoningModel(model: string): boolean {
+  return /^(gpt-5|o\d)/i.test(model);
+}
+
+export function reasoningParams(model: string, effort: 'none' | 'minimal' | 'low' | 'medium' | 'high' = 'low'): Record<string, unknown> {
+  if (!isReasoningModel(model)) return { temperature: 0.3 };
+  // gpt-5.1+ support 'none'; gpt-5 base supports 'minimal'. We use 'low' by default which is broadly supported.
+  return { reasoning: { effort } };
+}
+
+/**
+ * Structured JSON generation using the Responses API.
+ * `images` are data: URLs or https URLs.
+ */
+export async function generateStructured<T>(opts: {
+  model: string;
+  system: string;
+  user: string;
+  images?: string[];
+  schemaName: string;
+  schema: Record<string, unknown>;
+  maxOutputTokens?: number;
+  effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
+}): Promise<{ data: T; usage: { input: number; output: number } }> {
+  const client = openai();
+  const content: any[] = [{ type: 'input_text', text: opts.user }];
+  for (const img of opts.images || []) content.push({ type: 'input_image', image_url: img, detail: 'low' });
+
+  const res: any = await client.responses.create({
+    model: opts.model,
+    instructions: opts.system,
+    input: [{ role: 'user', content }],
+    text: { format: { type: 'json_schema', name: opts.schemaName, schema: opts.schema as any, strict: true } },
+    max_output_tokens: opts.maxOutputTokens ?? 2500,
+    ...(reasoningParams(opts.model, opts.effort) as any),
+  } as any);
+
+  const text: string = res.output_text ?? extractOutputText(res);
+  if (!text) {
+    const refusal = findRefusal(res);
+    throw new Error(refusal ? `Model refused: ${refusal}` : `Empty model output (status=${res.status}, incomplete=${JSON.stringify(res.incomplete_details || null)})`);
+  }
+  let data: T;
+  try {
+    data = JSON.parse(text) as T;
+  } catch (e) {
+    throw new Error(`Model returned invalid JSON: ${text.slice(0, 200)}`);
+  }
+  return { data, usage: { input: res.usage?.input_tokens ?? 0, output: res.usage?.output_tokens ?? 0 } };
+}
+
+function extractOutputText(res: any): string {
+  try {
+    const parts: string[] = [];
+    for (const out of res.output || []) {
+      if (out.type === 'message') for (const c of out.content || []) if (c.type === 'output_text') parts.push(c.text);
+    }
+    return parts.join('');
+  } catch {
+    return '';
+  }
+}
+function findRefusal(res: any): string | null {
+  try {
+    for (const out of res.output || []) if (out.type === 'message') for (const c of out.content || []) if (c.type === 'refusal') return c.refusal;
+  } catch {}
+  return null;
+}
+
+/** Streaming plain-text generation (for Ask). Yields text deltas. */
+export async function* streamText(opts: {
+  model: string;
+  system: string;
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
+  maxOutputTokens?: number;
+}): AsyncGenerator<string, void, unknown> {
+  const client = openai();
+  const stream: any = await client.responses.create({
+    model: opts.model,
+    instructions: opts.system,
+    input: opts.messages.map((m) => ({ role: m.role, content: m.content })),
+    stream: true,
+    max_output_tokens: opts.maxOutputTokens ?? 1800,
+    ...(reasoningParams(opts.model, opts.effort) as any),
+  } as any);
+  for await (const event of stream) {
+    if (event?.type === 'response.output_text.delta' && typeof event.delta === 'string') yield event.delta;
+    else if (event?.type === 'response.error') throw new Error(event.error?.message || 'stream error');
+    else if (event?.type === 'error') throw new Error(event.message || 'stream error');
+  }
+}
+
+export async function transcribeFile(buf: Buffer, filename: string, opts?: { language?: string; prompt?: string }): Promise<{ text: string; language?: string }> {
+  const client = openai();
+  const model = models().transcribe;
+  const file = await toFile(buf, filename);
+  const params: any = { file, model, response_format: 'json' };
+  if (opts?.prompt) params.prompt = opts.prompt;
+  if (opts?.language) params.language = opts.language;
+  const res: any = await client.audio.transcriptions.create(params);
+  const text = typeof res === 'string' ? res : res.text || '';
+  return { text: (text || '').trim(), language: res?.language };
+}
+
+export async function embedTexts(texts: string[]): Promise<Float32Array[]> {
+  if (!texts.length) return [];
+  const client = openai();
+  const res = await client.embeddings.create({ model: models().embed, input: texts, dimensions: config.embedDims });
+  return res.data.sort((a, b) => a.index - b.index).map((d) => Float32Array.from(d.embedding));
+}
+
+export function embeddingToBuffer(v: Float32Array): Buffer {
+  return Buffer.from(v.buffer, v.byteOffset, v.byteLength);
+}
+export function bufferToEmbedding(b: Buffer): Float32Array {
+  const copy = new Uint8Array(b.byteLength);
+  copy.set(b);
+  return new Float32Array(copy.buffer);
+}
+export function cosine(a: Float32Array, b: Float32Array): number {
+  let dot = 0, na = 0, nb = 0;
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+  if (!na || !nb) return 0;
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
+/** Test the configured key/models with a tiny call. */
+export async function testOpenAI(): Promise<{ ok: boolean; message: string; model: string }> {
+  const m = models().analysis;
+  try {
+    const client = openai();
+    const res: any = await client.responses.create({ model: m, input: 'Reply with the single word OK.', max_output_tokens: 16, ...(reasoningParams(m, 'low') as any) } as any);
+    const out = (res.output_text || '').trim();
+    return { ok: true, message: `Model ${m} responded: ${out.slice(0, 40)}`, model: m };
+  } catch (e: any) {
+    return { ok: false, message: e?.message || String(e), model: m };
+  }
+}

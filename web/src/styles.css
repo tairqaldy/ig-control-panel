@@ -1,0 +1,150 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/instrument-sans';
+@import '@fontsource/instrument-serif';
+@import '@fontsource/instrument-serif/400-italic.css';
+@import '@fontsource-variable/geist-mono';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ============================== Design tokens ==============================
+   Bone / Ink / Jade. Warm paper, sharp type, one living accent.             */
+:root {
+  --bg: #f4f1ea;
+  --bg-2: #ede9df;
+  --surface: #fbfaf6;
+  --surface-2: #f1eee6;
+  --line: #e3dfd3;
+  --line-2: #d3cec0;
+  --ink: #17161a;
+  --ink-2: #4a4843;
+  --muted: #8b877d;
+  --muted-2: #b3aea2;
+  --accent: #177a4c;
+  --accent-2: #1f915b;
+  --accent-soft: #dcefe3;
+  --accent-ink: #f4f1ea;
+  --warn: #b7791f;
+  --warn-soft: #f7ecd6;
+  --danger: #b03a2e;
+  --danger-soft: #f7e0dc;
+  --shadow: 0 1px 2px rgba(23, 22, 26, 0.04), 0 8px 24px -12px rgba(23, 22, 26, 0.18);
+  --shadow-lg: 0 2px 6px rgba(23, 22, 26, 0.06), 0 30px 60px -24px rgba(23, 22, 26, 0.35);
+  --radius: 14px;
+  color-scheme: light;
+}
+.dark {
+  --bg: #131312;
+  --bg-2: #0e0e0d;
+  --surface: #1a1a18;
+  --surface-2: #222220;
+  --line: #2a2a27;
+  --line-2: #363532;
+  --ink: #edeae2;
+  --ink-2: #c9c4b8;
+  --muted: #8f8b81;
+  --muted-2: #605d56;
+  --accent: #4fd39a;
+  --accent-2: #6ee0ad;
+  --accent-soft: #1b3128;
+  --accent-ink: #131312;
+  --warn: #e0a84a;
+  --warn-soft: #33290f;
+  --danger: #e6685a;
+  --danger-soft: #3a1c18;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.4), 0 30px 60px -24px rgba(0, 0, 0, 0.8);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-muted-2: var(--muted-2);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --font-sans: 'Instrument Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Instrument Serif', ui-serif, Georgia, serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius-card: var(--radius);
+  --shadow-card: var(--shadow);
+  --shadow-float: var(--shadow-lg);
+}
+
+html, body, #root { height: 100%; }
+body {
+  @apply bg-bg text-ink font-sans antialiased;
+  font-feature-settings: 'ss01', 'cv11', 'liga';
+  text-rendering: optimizeLegibility;
+  background-image:
+    radial-gradient(1200px 600px at 10% -10%, color-mix(in oklab, var(--accent) 7%, transparent), transparent 60%),
+    radial-gradient(900px 500px at 110% 10%, color-mix(in oklab, var(--warn) 6%, transparent), transparent 60%);
+  background-attachment: fixed;
+}
+::selection { background: color-mix(in oklab, var(--accent) 30%, transparent); }
+
+/* Subtle paper grain */
+body::before {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0.35; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.dark body::before { mix-blend-mode: screen; opacity: 0.18; }
+
+/* Scrollbars */
+* { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 99px; border: 3px solid transparent; background-clip: content-box; }
+
+/* Component classes live in the components layer so utilities (w-52, !px-1 …) can override them */
+@layer components {
+  .display { @apply font-serif tracking-[-0.01em]; }
+  .eyebrow { @apply font-mono text-[11px] uppercase tracking-[0.14em] text-muted; }
+  .tabular { font-variant-numeric: tabular-nums; }
+  .card { @apply bg-surface border border-line rounded-[var(--radius)]; box-shadow: var(--shadow); }
+  .card-flat { @apply bg-surface border border-line rounded-[var(--radius)]; }
+  .chip { @apply inline-flex items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-[12px] leading-none text-ink-2 transition-colors hover:border-line-2 hover:text-ink; }
+  .chip-active { @apply border-accent bg-accent-soft text-accent; }
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl border border-line bg-surface px-3.5 py-2 text-[13px] font-medium text-ink transition-all hover:border-line-2 hover:bg-surface-2 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none; }
+  .btn-primary { @apply border-accent bg-accent text-accent-ink hover:bg-accent-2 hover:border-accent-2; }
+  .btn-ghost { @apply border-transparent bg-transparent hover:bg-surface-2; }
+  .btn-danger { @apply border-danger/30 text-danger hover:bg-danger-soft; }
+  .btn-sm { @apply px-2.5 py-1.5 text-[12px] rounded-lg; }
+  .input { @apply w-full rounded-xl border border-line bg-surface px-3 py-2 text-[13px] text-ink placeholder:text-muted-2 outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/15; }
+  .kbd { @apply font-mono text-[10px] rounded-md border border-line bg-surface-2 px-1.5 py-0.5 text-muted; }
+  .divider { @apply h-px w-full bg-line; }
+  .cite { @apply inline-flex items-center align-baseline font-mono text-[10.5px] leading-none rounded-md border border-accent/40 bg-accent-soft text-accent px-1.5 py-[3px] mx-0.5 cursor-pointer hover:bg-accent hover:text-accent-ink transition-colors; }
+}
+
+/* Motion */
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.rise { animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+.skeleton { background: linear-gradient(90deg, var(--surface-2) 25%, var(--bg-2) 37%, var(--surface-2) 63%); background-size: 800px 100%; animation: shimmer 1.4s infinite linear; }
+@keyframes pulse-dot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
+.pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .rise, .skeleton, .pulse-dot { animation: none !important; } }
+
+/* Prose for AI answers */
+.prose-rs p { @apply my-2 leading-relaxed; }
+.prose-rs ul { @apply my-2 list-disc pl-5 space-y-1; }
+.prose-rs ol { @apply my-2 list-decimal pl-5 space-y-1; }
+.prose-rs h1, .prose-rs h2, .prose-rs h3 { @apply font-semibold mt-4 mb-1.5; }
+.prose-rs strong { @apply font-semibold text-ink; }
+.prose-rs code { @apply font-mono text-[12px] bg-surface-2 rounded px-1 py-0.5; }
+
+/* Line clamps */
+.clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }

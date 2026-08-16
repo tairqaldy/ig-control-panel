@@ -1,0 +1,24 @@
+# deps
+node_modules/
+# builds
+dist/
+web/dist/
+server/dist/
+# local data (SQLite, media, tmp)
+data/
+*.db
+*.db-wal
+*.db-shm
+# env & secrets
+.env
+.env.*
+!.env.example
+# os / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+# scratch
+tmp/
+.railway/

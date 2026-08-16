@@ -1,0 +1,11 @@
+node_modules
+**/node_modules
+data
+**/dist
+.env
+.env.*
+!.env.example
+*.log
+.git
+.railway
+docs/screenshots
