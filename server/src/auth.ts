@@ -21,7 +21,8 @@ export function verifySessionToken(token: string | undefined): { u: string } | n
   const payload = token.slice(0, idx);
   const sig = token.slice(idx + 1);
   const expected = sign(payload);
-  if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  const a = Buffer.from(sig), b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
   try {
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     if (typeof data.exp !== 'number' || data.exp < Date.now()) return null;
@@ -67,10 +68,19 @@ export function currentUser(c: Context): { u: string } | null {
   return verifySessionToken(getCookie(c, COOKIE));
 }
 
-/** Simple in-memory login rate limiter: 8 attempts per 10 min per IP. */
+/**
+ * Login rate limiter: 8 attempts / 10 min per client, PLUS a global cap of 60 attempts / 10 min
+ * (so spoofing X-Forwarded-For cannot buy unlimited guesses). Bounded memory.
+ */
 const attempts = new Map<string, { n: number; reset: number }>();
+let global = { n: 0, reset: 0 };
 export function loginAllowed(ip: string): boolean {
   const nowMs = Date.now();
+  if (global.reset < nowMs) global = { n: 0, reset: nowMs + 10 * 60_000 };
+  global.n += 1;
+  if (global.n > 60) return false;
+  if (attempts.size > 2000) for (const [k, v] of attempts) if (v.reset < nowMs) attempts.delete(k);
+  if (attempts.size > 5000) attempts.clear();
   const rec = attempts.get(ip);
   if (!rec || rec.reset < nowMs) {
     attempts.set(ip, { n: 1, reset: nowMs + 10 * 60_000 });
@@ -83,8 +93,10 @@ export function loginSucceeded(ip: string) {
   attempts.delete(ip);
 }
 
+/** Client IP: the LAST X-Forwarded-For entry is the one appended by the trusted edge proxy (Railway/nginx); the first is client-controlled. */
 export function clientIp(c: Context): string {
-  return (c.req.header('x-forwarded-for') || '').split(',')[0].trim() || c.req.header('x-real-ip') || 'local';
+  const xff = (c.req.header('x-forwarded-for') || '').split(',').map((s) => s.trim()).filter(Boolean);
+  return xff[xff.length - 1] || c.req.header('x-real-ip') || 'local';
 }
 
 /** Hono middleware protecting API routes. */

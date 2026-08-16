@@ -2,7 +2,8 @@ import { Hono } from 'hono';
 import { db, j, now } from '../db.js';
 import type { Analysis, ItemRow } from '../types.js';
 import { keywordSearch, indexItem, normalizeTag } from '../services/search.js';
-import { neighborsOf, semanticSearch, dropEmbedding } from '../services/neighbors.js';
+import { neighborsOf, semanticSearch, dropEmbedding, setEmbedding } from '../services/neighbors.js';
+import { bufferToEmbedding } from '../services/openai.js';
 import { worker } from '../services/worker.js';
 import { resetItemForReprocess } from '../services/pipeline.js';
 import { removeItemMedia } from '../services/media.js';
@@ -187,18 +188,28 @@ items.patch('/:id', async (c) => {
       const ins = d.prepare("INSERT OR IGNORE INTO item_tags (item_id, tag, kind) VALUES (?, ?, 'user')");
       for (const t of JSON.parse(patch.user_tags as string)) ins.run(id, t);
     }
-    if (typeof body.archived === 'boolean' && body.archived) dropEmbedding(id);
+    if (typeof body.archived === 'boolean') syncEmbeddingCache(id, body.archived);
     indexItem(db().prepare('SELECT * FROM items WHERE id = ?').get(id) as ItemRow);
   }
   return c.json({ item: fullItem(db().prepare('SELECT * FROM items WHERE id = ?').get(id) as ItemRow) });
 });
 
+/** Keep the in-memory embedding cache in sync with archive state. */
+function syncEmbeddingCache(id: string, archived: boolean) {
+  if (archived) { dropEmbedding(id); return; }
+  const r = db().prepare('SELECT embedding FROM items WHERE id = ?').get(id) as { embedding: Buffer | null } | undefined;
+  if (r?.embedding) setEmbedding(id, bufferToEmbedding(r.embedding));
+}
+
+const BULK_ACTIONS = new Set(['favorite', 'unfavorite', 'archive', 'unarchive', 'reanalyze', 'delete', 'add_tag']);
+
 items.post('/:id/reanalyze', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json<{ media?: boolean }>().catch(() => ({ media: false }));
-  const r = db().prepare('SELECT id FROM items WHERE id = ?').get(id);
+  const r = db().prepare('SELECT id, queue_state FROM items WHERE id = ?').get(id) as any;
   if (!r) return c.json({ error: 'not found' }, 404);
-  resetItemForReprocess(id, { media: !!body.media });
+  if (r.queue_state === 'running') return c.json({ error: 'This save is being processed right now — try again in a moment.' }, 409);
+  if (!resetItemForReprocess(id, { media: !!body.media })) return c.json({ error: 'Could not reset this save (is it processing?)' }, 409);
   worker.enqueue([id], { force: true });
   return c.json({ ok: true });
 });
@@ -215,19 +226,21 @@ items.delete('/:id', async (c) => {
 /** Bulk operations */
 items.post('/bulk', async (c) => {
   const body = await c.req.json<{ ids: string[]; action: 'favorite' | 'unfavorite' | 'archive' | 'unarchive' | 'reanalyze' | 'delete' | 'add_tag'; tag?: string }>();
-  const ids = (body.ids || []).slice(0, 5000);
+  const ids = (body.ids || []).map(String).filter((s) => s.trim()).slice(0, 5000);
   if (!ids.length) return c.json({ ok: true, n: 0 });
+  if (!BULK_ACTIONS.has(body.action)) return c.json({ error: `unknown action ${body.action}` }, 400);
   const d = db();
   let n = 0;
   if (body.action === 'reanalyze') {
-    for (const id of ids) resetItemForReprocess(id);
-    n = worker.enqueue(ids, { force: true });
+    const ready = ids.filter((id) => resetItemForReprocess(id));
+    n = worker.enqueue(ready, { force: true });
   } else if (body.action === 'delete') {
     const del = d.prepare('DELETE FROM items WHERE id = ?');
     d.transaction(() => { for (const id of ids) { n += del.run(id).changes; d.prepare('DELETE FROM items_fts WHERE item_id = ?').run(id); dropEmbedding(id); } })();
     for (const id of ids) await removeItemMedia(id);
-  } else if (body.action === 'add_tag' && body.tag) {
-    const tag = normalizeTag(body.tag);
+  } else if (body.action === 'add_tag') {
+    const tag = normalizeTag(body.tag || '');
+    if (!tag) return c.json({ error: 'tag required' }, 400);
     const ins = d.prepare("INSERT OR IGNORE INTO item_tags (item_id, tag, kind) VALUES (?, ?, 'user')");
     d.transaction(() => {
       for (const id of ids) {
@@ -243,7 +256,7 @@ items.post('/bulk', async (c) => {
     const val = body.action.startsWith('un') ? 0 : 1;
     const upd = d.prepare(`UPDATE items SET ${col} = ?, updated_at = ? WHERE id = ?`);
     d.transaction(() => { for (const id of ids) n += upd.run(val, now(), id).changes; })();
-    if (col === 'archived') for (const id of ids) if (val) dropEmbedding(id);
+    if (col === 'archived') for (const id of ids) syncEmbeddingCache(id, !!val);
   }
   return c.json({ ok: true, n });
 });

@@ -45,7 +45,7 @@ Pick any string as your verify token (e.g. `resurface-verify-abc123`) and set it
 - **Verify and save** — Resurface answers the handshake (you'll see *"Webhook verified by Meta"* in the Automations activity log).
 - Subscribe to fields: **`messages`**, **`comments`** (optionally `messaging_postbacks`, `message_reactions`).
 
-Recommended: copy the **Meta App Secret** (Settings → Basic → App Secret → Show) into `META_APP_SECRET` so Resurface verifies the `X-Hub-Signature-256` HMAC on every webhook. If it's not set, webhooks are accepted unsigned (documented behavior; fine for testing, set it before going live).
+**Required before you paste an access token:** copy the **Meta App Secret** (Settings → Basic → App Secret → Show) into `META_APP_SECRET` so Resurface verifies the `X-Hub-Signature-256` HMAC on every webhook. Resurface fails closed: once an access token is configured, unsigned webhooks are rejected with 401 (and logged) until the secret is set. Without a token *and* without a secret, unsigned events are merely logged (useful for testing the handshake).
 
 ## 4. Give Resurface the credentials
 
@@ -56,7 +56,7 @@ Either as environment variables (Railway → Variables) or in **Settings → Ins
 | `IG_ACCESS_TOKEN` | the long-lived token from step 2 |
 | `IG_USER_ID` | your numeric professional account id — get it with `GET https://graph.instagram.com/me?fields=user_id,username&access_token=…` → use **`user_id`** (Resurface's *Test connection* button shows it) |
 | `META_VERIFY_TOKEN` | the string you chose |
-| `META_APP_SECRET` | Meta App Secret (recommended) |
+| `META_APP_SECRET` | Meta App Secret (required as soon as a token is set — see step 3) |
 | `GRAPH_API_VERSION` | optional, default `v23.0` |
 
 Click **Test connection** on the Automations page — it calls `/me` and should show your username.

@@ -16,7 +16,6 @@
     "build": "npm run build -w web && npm run build -w server",
     "start": "npm run start -w server",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
-    "harvester:build": "node harvester/build.mjs",
     "docker:build": "docker build -t resurface .",
     "docker:run": "docker run --rm -p 8080:8080 --env-file .env -v resurface-data:/data resurface"
   },

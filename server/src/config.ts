@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
-/** Minimal .env loader (no dependency): first match of ./.env or ../.env; never overrides real env vars. */
+/** Minimal .env loader (no dependency): first match of ./.env, ../.env or <repo>/.env; never overrides real env vars. */
 (function loadDotEnv() {
-  for (const p of [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../.env')]) {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  for (const p of [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../.env'), path.resolve(here, '../../.env')]) {
     if (!fs.existsSync(p)) continue;
     try {
       for (const line of fs.readFileSync(p, 'utf8').split(/\r?\n/)) {
@@ -28,7 +30,24 @@ function num(v: string | undefined, def: number): number {
   return Number.isFinite(n) && v !== undefined && v !== '' ? n : def;
 }
 
-const DATA_DIR = path.resolve(process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './data');
+/**
+ * Data directory. Absolute paths are used as-is. Relative paths (e.g. the default "./data") resolve against the
+ * REPO ROOT — not the process cwd — so `npm run dev` (cwd = server/), `npm start` and `node server/dist/index.js`
+ * all share the same ./data. Inside Docker/Railway a volume is expected at /data (set by the image or by
+ * RAILWAY_VOLUME_MOUNT_PATH); a stray relative DATA_DIR from a local .env is ignored there.
+ */
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+function resolveDataDir(): string {
+  const raw = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || '';
+  const inContainer = fs.existsSync('/.dockerenv') || !!process.env.RAILWAY_ENVIRONMENT;
+  if (raw && path.isAbsolute(raw)) return raw;
+  if (inContainer) {
+    if (raw) console.warn(`[config] ignoring relative DATA_DIR="${raw}" inside a container; using /data`);
+    return '/data';
+  }
+  return path.resolve(REPO_ROOT, raw || './data');
+}
+const DATA_DIR = resolveDataDir();
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(path.join(DATA_DIR, 'media'), { recursive: true });
 fs.mkdirSync(path.join(DATA_DIR, 'tmp'), { recursive: true });

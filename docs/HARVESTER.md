@@ -4,9 +4,9 @@ The harvester is a small self-contained JavaScript file ([`harvester/harvester.j
 
 ## Why a browser script?
 
-Instagram has no official API for reading your own saved posts. The web app you already use calls an internal endpoint (`/api/v1/feed/saved/posts/`) with your session; the harvester calls exactly the same endpoint, from the same page, with the same cookies — the way a browser extension would. Nothing is sent anywhere except instagram.com; the result is written to a file on your machine that *you* upload.
+Instagram has no official API for reading your own saved posts. The web app you already use calls an internal endpoint (`/api/v1/feed/saved/posts/`) with your session; the harvester calls exactly the same endpoint, from the same page, with the same cookies — the way a browser extension would. Nothing is sent to any third party. The result either becomes a JSON file on your machine that *you* upload, or — if you copied the script from your own dashboard's Import page — goes straight to **your** Resurface via the "Send to Resurface" button (a token-gated form POST to your dashboard's URL; the token is private, lives 24 h, and only allows importing).
 
-Rate limits are respected (~1 request/second with jitter, exponential back-off on `429`). 5,000 saves ≈ 240 requests ≈ 5 minutes.
+Rate limits are respected (~1 request/second with jitter, exponential back-off on `429`, automatic retry on network blips). Instagram itself is slow when paginating deep into a big library: expect **~1.5–2 saves/second**, i.e. 5,000 saves ≈ 40–50 minutes. You can **Stop** at any time and click **Start** later — it resumes from where it left off (as long as the tab stays open).
 
 ## Step by step
 
@@ -15,9 +15,8 @@ Rate limits are respected (~1 request/second with jitter, exponential back-off o
    - **Bookmarklet**: on the Resurface *Import* page drag the **"Harvest saves (bookmarklet)"** button to your bookmarks bar. Click it while on instagram.com.
    - **Console**: on the Import page click **"Copy console script"**, then on instagram.com press `F12` → *Console* → paste → `Enter`. Chrome may ask you to type `allow pasting` once first (it's a safety feature; the script is fully readable at `/harvester.js`).
 3. A dark panel appears bottom-right. Optional: uncheck *"Also map my collections"* to save requests, or set a *Max saves* to test with a small batch.
-4. Click **Start**. Watch the counter. You can **Stop & download** any time to keep what's been collected so far.
-5. When it finishes it downloads `resurface-harvest-YYYYMMDD.json` automatically (or click *Download JSON*).
-6. Go to Resurface → **Import** → drop the file. Import is instant; analysis then runs in the background (sidebar shows progress).
+4. Click **Start**. Watch the counter. You can **Stop** any time (and **Start** again later to resume) or **Download JSON** what's been collected so far.
+5. When it finishes: click **Send to Resurface** (opens a small confirmation tab in your dashboard) — or **Download JSON** and drop `resurface-harvest-YYYYMMDD.json` on the Import page. Import is instant; analysis then runs in the background (sidebar shows progress).
 
 > **Upload soon after harvesting.** The media URLs inside the file are signed CDN links: images last ~4 days, videos ~1–2 days. Resurface downloads what it needs right after import. If links have expired you'll see `media: expired` on those saves — just re-run the harvester and upload again; existing saves get their links refreshed (analyses, notes and favorites are kept).
 
@@ -54,13 +53,14 @@ Order matters: items come newest-saved-first; Resurface stores that as `saved_ra
 |---|---|
 | Panel says *Not authorized (HTTP 401/403)* | You're not logged in, or Instagram is showing a checkpoint. Reload instagram.com, log in, retry. |
 | *Rate limited (HTTP 429). Waiting…* | Normal on very large libraries. It waits 20 s, 40 s, 60 s… and continues. Leave the tab open. |
-| Stops early with a `5xx` error | Instagram occasionally serves a bad pagination cursor. Click *Stop & download*, upload what you got, then re-run later — new items merge in. |
-| Nothing downloads at the end | Some browsers block automatic downloads: click **Download JSON** manually. Or run `copy(JSON.stringify(window.__resurfaceHarvest))` in the console and paste into a file. |
+| Stops with a network error or `5xx` | It retries automatically with back-off. If it gives up, just click **Start** again — it resumes from the last cursor. Or **Download JSON** what you have; re-running later merges new items in. |
+| Nothing downloads at the end | Some browsers block downloads that aren't triggered by a click: click **Download JSON** manually (or **Send to Resurface**). Or run `copy(JSON.stringify(window.__resurfaceHarvest))` in the console and paste into a file. |
+| "Upload token invalid or expired" after *Send to Resurface* | The token embedded in the script/bookmarklet lasts 24 h. Copy the script (or re-drag the bookmarklet) from your Import page again and re-run. |
 | Bookmarklet does nothing | Some setups block `javascript:` bookmarks on this site — use the console method. |
 | Instagram warns *"Stop! This is a browser feature intended for developers…"* | That's a generic warning about pasting unknown code. You can read every line of ours: `/harvester.js`. |
 
 ## Privacy & safety
 
-- The script has no dependencies, no analytics, and does not talk to Resurface or any third party.
+- The script has no dependencies and no analytics. It talks to instagram.com (reads) and — only when you click **Send to Resurface** — to your own dashboard's URL. Never to any third party.
 - It reads only your saved posts (and collection membership if enabled). It never writes to your account.
 - Use it on your own account only. Instagram's terms discourage automation; this is a read-only, human-paced export of your own data, but you use it at your own risk.

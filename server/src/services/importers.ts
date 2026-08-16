@@ -86,7 +86,9 @@ export function upsertItems(items: HarvestItem[], source: 'harvest' | 'export' |
       media_urls = CASE WHEN @media_urls IS NOT NULL THEN @media_urls ELSE media_urls END,
       media_urls_fetched_at = CASE WHEN @media_urls IS NOT NULL THEN @media_urls_fetched_at ELSE media_urls_fetched_at END,
       raw = COALESCE(@raw, raw),
-      media_status = CASE WHEN @media_urls IS NOT NULL AND media_status IN ('failed','expired','pending') THEN 'pending' ELSE media_status END,
+      media_status = CASE WHEN @media_urls IS NOT NULL AND (media_status IN ('failed','expired','pending','skipped','partial') OR thumb_path IS NULL) THEN 'pending' ELSE media_status END,
+      analysis_status = CASE WHEN @media_urls IS NOT NULL AND analysis_status IN ('skipped','failed') THEN 'pending' ELSE analysis_status END,
+      analysis_error = CASE WHEN @media_urls IS NOT NULL AND analysis_status IN ('skipped','failed') THEN NULL ELSE analysis_error END,
       updated_at = @updated_at
     WHERE id = @id`);
 
@@ -148,6 +150,16 @@ export function upsertItems(items: HarvestItem[], source: 'harvest' | 'export' |
     }
   });
   tx();
+
+  // A harvest is always a newest-first prefix of the saved feed. If it brought NEW items, shift every older ranked
+  // item not in this import down by that many, so a limited/incremental re-harvest never collides with existing ranks.
+  if (source === 'harvest' && created > 0 && ids.length) {
+    const older = (d.prepare('SELECT COUNT(*) AS n FROM items WHERE saved_rank IS NOT NULL').get() as any).n as number;
+    if (older > ids.length) {
+      const tmp = d.prepare(`UPDATE items SET saved_rank = saved_rank + ? WHERE saved_rank IS NOT NULL AND id NOT IN (${ids.map(() => '?').join(',')})`);
+      tmp.run(created, ...ids);
+    }
+  }
 
   const info = d
     .prepare('INSERT INTO imports (source, filename, total, created, updated, skipped, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')

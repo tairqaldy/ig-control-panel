@@ -145,9 +145,14 @@ export async function getUsername(igScopedId: string): Promise<string | null> {
 /* ------------------------------------------------------------------ */
 /* Webhook handling                                                     */
 /* ------------------------------------------------------------------ */
+/**
+ * Webhook signature check. Fail closed: if no META_APP_SECRET is configured but an access token IS
+ * (i.e. the app could actually send DMs), unsigned webhooks are rejected so nobody can drive your account.
+ * With neither configured (pure logging/testing) unsigned events are accepted and only logged.
+ */
 export function verifySignature(rawBody: string, header: string | undefined): boolean {
   const c = metaConfig();
-  if (!c.appSecret) return true; // not configured → accept (documented; set META_APP_SECRET to enforce)
+  if (!c.appSecret) return !c.accessToken;
   if (!header || !header.startsWith('sha256=')) return false;
   const expected = 'sha256=' + crypto.createHmac('sha256', c.appSecret).update(rawBody, 'utf8').digest('hex');
   const a = Buffer.from(header), b = Buffer.from(expected);

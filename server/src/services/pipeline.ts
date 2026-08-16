@@ -9,13 +9,14 @@ import { download, extractAudio, extractFrames, fileToVisionDataUrl, HttpError, 
 import { embedTexts, embeddingToBuffer, generateStructured, hasOpenAI, models, transcribeFile } from './openai.js';
 import { enrichFromEmbed } from './importers.js';
 import { indexItem, normalizeTag } from './search.js';
-import { updateNeighborsFor } from './neighbors.js';
+import { updateNeighborsFor, currentEmbeddingTag } from './neighbors.js';
 
 export type Stage = 'media' | 'transcribe' | 'analyze' | 'embed';
 
 export interface ProcessOptions {
   force?: boolean; // re-run analysis even if done
   skipMedia?: boolean;
+  mediaOnly?: boolean; // fetch media/transcript now (URLs expire) but do NOT run the paid analysis
   log?: (msg: string) => void;
 }
 
@@ -48,6 +49,8 @@ export async function processItem(id: string, opts: ProcessOptions = {}): Promis
     item = getItem(id)!;
   }
 
+  if (opts.mediaOnly) return;
+
   // ---- Stage 2: analysis ----
   if (item.analysis_status !== 'done' || opts.force) {
     if (!hasOpenAI()) {
@@ -58,13 +61,18 @@ export async function processItem(id: string, opts: ProcessOptions = {}): Promis
     try {
       await runAnalysisStage(item);
       item = getItem(id)!;
-      await runEmbeddingStage(item);
-      setItem(id, { analysis_status: 'done', analysis_error: null, attempts: item.attempts + 1 });
+      // Analysis is the expensive part — never let an embedding hiccup mark it failed (it gets re-embedded on the next pass).
+      let embedErr: string | null = null;
+      try { await runEmbeddingStage(item); } catch (e: any) { embedErr = `embedding failed (will retry): ${String(e?.message || e).slice(0, 300)}`; log(id, embedErr); }
+      setItem(id, { analysis_status: 'done', analysis_error: embedErr, attempts: item.attempts + 1 });
     } catch (e: any) {
       const msg = String(e?.message || e).slice(0, 800);
       log(id, `analysis failed: ${msg}`);
       setItem(id, { analysis_status: msg.startsWith('SKIP:') ? 'skipped' : 'failed', analysis_error: msg, attempts: item.attempts + 1 });
     }
+  } else if (!item.embedding && hasOpenAI()) {
+    // Analyzed earlier but the embedding is missing/mismatched → just embed.
+    try { await runEmbeddingStage(item); setItem(id, { analysis_error: null }); } catch (e: any) { log(id, `embedding retry failed: ${e?.message || e}`); }
   }
 }
 
@@ -302,19 +310,24 @@ async function runEmbeddingStage(item: ItemRow) {
   const text = embeddingText(item, a);
   if (!text.trim()) return;
   const [vec] = await embedTexts([text]);
-  setItem(item.id, { embedding: embeddingToBuffer(vec), embedding_model: `${models().embed}:${config.embedDims}` });
+  setItem(item.id, { embedding: embeddingToBuffer(vec), embedding_model: currentEmbeddingTag() });
   updateNeighborsFor(item.id, vec);
 }
 
-/** Remove derived data so an item can be fully re-processed. */
-export function resetItemForReprocess(id: string, opts: { media?: boolean } = {}) {
+/** Remove derived data so an item can be fully re-processed. Returns false if the item is mid-flight (caller should tell the user). */
+export function resetItemForReprocess(id: string, opts: { media?: boolean } = {}): boolean {
+  const cur = getItem(id);
+  if (!cur) return false;
+  if (cur.queue_state === 'running') return false;
   const patch: Record<string, unknown> = { analysis_status: 'pending', analysis_error: null };
   if (opts.media) Object.assign(patch, { media_status: 'pending', media_error: null, transcript: null, transcript_lang: null, frames: null, thumb_path: null });
   setItem(id, patch);
   if (opts.media) {
-    const dir = path.join(config.mediaDir, safeName(id));
-    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    const name = safeName(id);
+    const dir = path.join(config.mediaDir, name);
+    if (name && fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
   }
+  return true;
 }
 
 export { toVisionDataUrl };

@@ -41,7 +41,7 @@ instagram.com ─(harvester, in your browser)─▶ JSON ─▶ Resurface server
                                           React dashboard (Library · Ask · Resurface · Graph · Import · Automations)
 ```
 
-Costs (OpenAI, defaults): roughly **$0.004–0.006 per save** — about **$20–25 for 4,500 saves** including transcription. Read [docs/FAQ.md](docs/FAQ.md#what-does-it-cost) for the breakdown and cheaper model options.
+Costs (OpenAI, defaults): roughly **$0.004–0.007 per save** — about **$20–30 for 4,500 saves** including transcription. Read [docs/FAQ.md](docs/FAQ.md#what-does-it-cost) for the breakdown and cheaper model options.
 
 ## Quick start (Railway, ~10 minutes)
 
@@ -88,14 +88,14 @@ npm install
 npm run dev                     # API on :8080, Vite dev server on :5173 (proxied)
 ```
 
-Or the production build in one process: `npm run build && npm start` → http://localhost:8080. Data lands in `./data`.
+Or the production build in one process: `npm run build && npm start` → http://localhost:8080. Data lands in `./data` at the repo root (a relative `DATA_DIR` always resolves against the repo root, whichever directory you start from).
 `ffmpeg` is bundled via `ffmpeg-static` for local dev; the Docker image installs it via apt.
 
-Docker: `docker build -t resurface . && docker run -p 8080:8080 --env-file .env -v resurface-data:/data resurface`
+Docker: `docker build -t resurface . && docker run -p 8080:8080 --env-file .env -v resurface-data:/data resurface` — inside a container the data dir is always `/data` (a relative `DATA_DIR` from your `.env` is ignored there), so mount your volume at `/data`.
 
 ## Importing your saves
 
-**Harvester (recommended).** Open instagram.com (logged in) → run the harvester (bookmarklet or paste into DevTools console) → Start → it pages through *all* your saves at ~1 request/second, maps your collections, and downloads `resurface-harvest-YYYYMMDD.json` → drop it on the Import page. Media links inside expire in a few days, so upload soon. Details, privacy notes and troubleshooting: [docs/HARVESTER.md](docs/HARVESTER.md).
+**Harvester (recommended).** Open instagram.com (logged in) → run the harvester (bookmarklet or paste into DevTools console — both copied from your Import page) → Start → it pages through *all* your saves (~1 request/second; a few thousand saves take 20–40 min, resumable) and maps your collections → click **Send to Resurface** (token-gated direct upload) or download the JSON and drop it on the Import page. Media links inside expire in a few days, so don't wait. Details, privacy notes and troubleshooting: [docs/HARVESTER.md](docs/HARVESTER.md).
 
 **Instagram data export.** Accounts Center → Download your information → *Saved* (JSON) → upload the ZIP. Gives links, save dates and collections; captions/thumbnails are fetched best-effort from public embed pages. Combine with the harvester for full media.
 

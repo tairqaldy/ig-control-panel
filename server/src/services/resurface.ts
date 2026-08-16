@@ -17,6 +17,20 @@ export function todayKey(): string { return new Date().toISOString().slice(0, 10
  * Deterministic per day so the "Today" set is stable.
  */
 export function pickResurface(n = 3, dateKey = todayKey()): ItemRow[] {
+  const d = db();
+  // Stable for the whole day: persist the chosen ids on first computation (marking items "resurfaced" must not reshuffle the set).
+  const key = `resurface_picks:${dateKey}:${n}`;
+  const stored = j<string[] | null>(getMeta(key), null);
+  if (stored && stored.length) {
+    const rows = d.prepare(`SELECT * FROM items WHERE id IN (${stored.map(() => '?').join(',')}) AND archived = 0`).all(...stored) as ItemRow[];
+    if (rows.length === stored.length) return stored.map((id) => rows.find((r) => r.id === id)!).filter(Boolean);
+  }
+  const picked = computePicks(n, dateKey);
+  if (picked.length) setMeta(key, JSON.stringify(picked.map((p) => p.id)));
+  return picked;
+}
+
+function computePicks(n: number, dateKey: string): ItemRow[] {
   const rows = db().prepare("SELECT * FROM items WHERE analysis_status = 'done' AND archived = 0").all() as ItemRow[];
   if (!rows.length) return [];
   const rnd = seeded(`resurface:${dateKey}`);

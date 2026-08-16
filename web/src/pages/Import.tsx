@@ -35,6 +35,7 @@ export default function Import() {
   const [includeLiked, setIncludeLiked] = useState(false);
   const [urls, setUrls] = useState('');
   const [script, setScript] = useState<string>('');
+  const bookmarkletRef = useRef<HTMLAnchorElement>(null);
   const worker = useWorkerStatus();
   const history = useQuery({ queryKey: ['imports'], queryFn: () => api.get<{ imports: any[] }>('/api/import/history') });
   const token = useQuery({ queryKey: ['upload-token'], queryFn: () => api.post<{ token: string; expiresAt: number }>('/api/import/token'), staleTime: 60 * 60_000 });
@@ -42,6 +43,8 @@ export default function Import() {
   // The script we hand out embeds a private 24h upload token so the harvester can "Send to Resurface" directly.
   const personalScript = script ? script.replace(/__RESURFACE_TOKEN__/g, token.data?.token || '__RESURFACE_TOKEN__') : '';
   const bookmarklet = personalScript ? `javascript:${encodeURIComponent(personalScript.replace(/^\/\*[\s\S]*?\*\/\s*/, ''))}` : '';
+  // React refuses to render javascript: URLs in href — set it through the DOM so the drag-to-bookmarks-bar gesture keeps the real code.
+  useEffect(() => { if (bookmarkletRef.current) bookmarkletRef.current.setAttribute('href', bookmarklet || '#'); }, [bookmarklet]);
 
   const done = (r: any) => {
     toast.success(`Imported ${r.total}: ${r.created} new, ${r.updated} updated${r.queued ? ` · ${r.queued} queued for analysis` : ''}`);
@@ -98,7 +101,7 @@ export default function Import() {
             </ol>
             <div className="mt-6 flex flex-wrap items-center gap-2">
               <button onClick={copyScript} disabled={!script} className="btn btn-primary"><Copy size={14} /> Copy console script</button>
-              <a href={bookmarklet || '#'} onClick={(e) => { e.preventDefault(); toast('Drag this button to your bookmarks bar, then click it on instagram.com'); }} draggable className={cn('btn', !bookmarklet && 'opacity-50')} title="Drag me to your bookmarks bar"><Bookmark size={14} /> Harvest saves (bookmarklet)</a>
+              <a ref={bookmarkletRef} onClick={(e) => { e.preventDefault(); toast('Drag this button to your bookmarks bar, then click it on instagram.com'); }} draggable className={cn('btn', !bookmarklet && 'opacity-50')} title="Drag me to your bookmarks bar"><Bookmark size={14} /> Harvest saves (bookmarklet)</a>
               <a href="/harvester.js" target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm text-muted">View source</a>
             </div>
             <div className="mt-4 text-[12px] text-muted leading-relaxed">Privacy: the script only talks to instagram.com using your own session and writes a file to your computer. Nothing is sent anywhere else. It respects rate limits and stops politely on errors.</div>

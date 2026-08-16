@@ -29,6 +29,8 @@
     alert('Open https://www.instagram.com/ (logged in) and run the harvester there.');
     return;
   }
+  // Only one harvester at a time: stop a previous run before starting a fresh panel.
+  try { if (typeof window.__resurfaceStop === 'function') window.__resurfaceStop(); } catch (e) { /* ignore */ }
   const old = document.getElementById(PANEL_ID);
   if (old) old.remove();
 
@@ -78,9 +80,11 @@
 
   /* ---------------- fetch helpers ---------------- */
   let stopFlag = false;
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Sleep in small slices so a Stop click takes effect within ~0.5s even during long back-offs.
+  const sleep = async (ms) => { const end = Date.now() + ms; while (Date.now() < end && !stopFlag) await new Promise((r) => setTimeout(r, Math.min(500, end - Date.now()))); };
   const headers = { 'x-ig-app-id': APP_ID, 'x-requested-with': 'XMLHttpRequest', accept: '*/*' };
   async function api(path, attempt = 0) {
+    if (stopFlag) throw new Error('Stopped.');
     let res;
     try {
       res = await fetch(path, { headers, credentials: 'include' });
@@ -94,8 +98,9 @@
     }
     if (res.status === 429 || res.status >= 500) {
       if (attempt >= 4) throw new Error(`Instagram responded ${res.status} repeatedly. Try again later - click Start to resume.`);
-      const wait = 20000 * (attempt + 1);
-      setStatus(`Rate limited (HTTP ${res.status}). Waiting ${wait / 1000}s... (${items.length} saves so far)`);
+      const retryAfter = Number(res.headers.get('retry-after')) * 1000;
+      const wait = retryAfter > 0 ? Math.min(retryAfter, 300000) : 20000 * (attempt + 1);
+      setStatus(`Rate limited (HTTP ${res.status}). Waiting ${Math.round(wait / 1000)}s... (${items.length} saves so far)`);
       await sleep(wait);
       return api(path, attempt + 1);
     }
@@ -172,9 +177,17 @@
   let maxId = '';
   let feedDone = false;
 
+  let running = false;
+  let hadError = false;
+  let finished = false;
   async function harvest() {
+    if (running) return;
+    running = true; hadError = false;
     stopFlag = false;
     enable(startBtn, false); enable(stopBtn, true); enable(dlBtn, false);
+    try { await harvestInner(); } finally { running = false; }
+  }
+  async function harvestInner() {
     const limit = Number(limitInput.value) > 0 ? Number(limitInput.value) : Infinity;
     try {
       // account + totals (best effort, only the first time)
@@ -186,9 +199,15 @@
       }
       if (total === null) {
         try {
-          const cl = await api('/api/v1/collections/list/?collection_types=' + encodeURIComponent('["ALL_MEDIA_AUTO_COLLECTION","MEDIA"]') + '&include_public_only=0&get_cover_media_lists=false&max_id=');
-          total = cl.all_saved_media_count || (cl.items && cl.items.find((c) => c.collection_type === 'ALL_MEDIA_AUTO_COLLECTION') || {}).collection_media_count || null;
-          collectionsInfo = (cl.items || []).filter((c) => c.collection_type === 'MEDIA').map((c) => ({ id: String(c.collection_id), name: c.collection_name, count: c.collection_media_count || 0 }));
+          // collections list is paginated too (users with many collections)
+          let cMax = ''; let guard = 0; collectionsInfo = [];
+          do {
+            const cl = await api('/api/v1/collections/list/?collection_types=' + encodeURIComponent('["ALL_MEDIA_AUTO_COLLECTION","MEDIA"]') + '&include_public_only=0&get_cover_media_lists=false&max_id=' + encodeURIComponent(cMax));
+            if (total === null) total = cl.all_saved_media_count || (cl.items && cl.items.find((c) => c.collection_type === 'ALL_MEDIA_AUTO_COLLECTION') || {}).collection_media_count || null;
+            for (const c of (cl.items || [])) if (c.collection_type === 'MEDIA') collectionsInfo.push({ id: String(c.collection_id), name: c.collection_name, count: c.collection_media_count || 0 });
+            cMax = cl.more_available && cl.next_max_id ? String(cl.next_max_id) : '';
+          } while (cMax && ++guard < 50 && !stopFlag);
+          if (total === null) total = 0;
           cCols.textContent = collectionsInfo.length ? `${collectionsInfo.length} collections` : '';
         } catch (e) { /* ignore */ }
       }
@@ -204,7 +223,8 @@
           const m = it.media || it;
           if (!m || !m.code) continue;
           if (byCode.has(m.code)) continue;
-          const n = normalize(m, null);
+          let n;
+          try { n = normalize(m, null); } catch (e) { console.warn('[resurface] skipping item with unexpected shape', m.code, e); continue; }
           byCode.set(m.code, n);
           items.push(n);
           if (items.length >= limit) break;
@@ -234,7 +254,7 @@
             for (const it of (data.items || [])) {
               const m = it.media || it; if (!m || !m.code) continue;
               let n = byCode.get(m.code);
-              if (!n) { n = normalize(m, null); byCode.set(m.code, n); items.push(n); }
+              if (!n) { try { n = normalize(m, null); } catch (e) { continue; } byCode.set(m.code, n); items.push(n); }
               n.collections = Array.from(new Set([...(n.collections || []), col.name]));
             }
             cMore = !!data.more_available && !!data.next_max_id && (data.items || []).length > 0;
@@ -245,16 +265,19 @@
         }
       }
       fill.style.width = '100%';
-      setStatus(stopFlag ? `Stopped. ${items.length} saves collected - download the JSON below.` : `Done! ${items.length} saves collected. Download the JSON, then upload it at ${RESURFACE_URL.startsWith('http') ? RESURFACE_URL + '/import' : 'your Resurface dashboard -> Import'}.`);
+      finished = feedDone;
+      setStatus(stopFlag ? `Stopped at ${items.length} saves. Click Start to resume, or Download JSON / Send what you have.` : `Done! ${items.length} saves collected. Download the JSON, then upload it at ${RESURFACE_URL.startsWith('http') ? RESURFACE_URL + '/import' : 'your Resurface dashboard -> Import'}.`);
     } catch (e) {
+      hadError = true;
       console.error('[resurface harvester]', e);
-      setStatus(`Error: ${e && e.message ? e.message : e}\n${items.length ? `${items.length} saves collected so far - you can still download them.` : ''}`);
+      setStatus(`Error: ${e && e.message ? e.message : e}\n${items.length ? `${items.length} saves collected so far (partial). Click Start to resume, or Download JSON / Send what you have.` : ''}`);
     }
     enable(startBtn, true); enable(stopBtn, false); enable(dlBtn, items.length > 0);
     if (sendBtn) enable(sendBtn, items.length > 0);
     window.__resurfaceHarvest = buildPayload();
     window.__resurfaceDone = true;
-    if (items.length && !stopFlag) {
+    // Only auto-download / announce completion for a COMPLETE run - never mask an error or a partial result.
+    if (items.length && !stopFlag && !hadError && finished) {
       if (CAN_SEND) setStatus(`Done! ${items.length} saves collected. Click "Send to Resurface" (opens a new tab) or "Download JSON".`);
       else download();
     }
@@ -301,8 +324,9 @@
   }
 
   window.__resurfaceStart = harvest;
+  window.__resurfaceStop = () => { stopFlag = true; };
   startBtn.onclick = harvest;
-  stopBtn.onclick = () => { stopFlag = true; setStatus('Stopping after the current page... (click Start later to resume)'); };
+  stopBtn.onclick = () => { stopFlag = true; setStatus('Stopping... (click Start later to resume)'); };
   dlBtn.onclick = download;
   if (sendBtn) sendBtn.onclick = sendToResurface;
 })();

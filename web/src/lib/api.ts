@@ -36,6 +36,7 @@ export function qs(params: Record<string, string | number | boolean | undefined 
 /** Server-sent events over POST (for Ask). */
 export async function ssePost(path: string, body: unknown, handlers: { onEvent: (event: string, data: any) => void; signal?: AbortSignal }) {
   const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: handlers.signal, credentials: 'same-origin' });
+  if (res.status === 401) window.dispatchEvent(new CustomEvent('rs:unauthorized'));
   if (!res.ok || !res.body) {
     const t = await res.text().catch(() => '');
     let msg = t;

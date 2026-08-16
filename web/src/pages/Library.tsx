@@ -68,15 +68,20 @@ export default function Library() {
   const [semantic, setSemantic] = useState(true);
 
   const params = { q: get('q'), category: get('category'), tag: get('tag'), author: get('author'), type: get('type'), status: get('status'), collection: get('collection'), content_type: get('content_type'), sort: get('sort') || 'saved', favorite: get('favorite'), evergreen: get('evergreen'), min_useful: get('min_useful'), archived: get('archived'), semantic: semantic ? '1' : '' };
+  const isRandom = params.sort === 'random';
   const query = useInfiniteQuery({
     queryKey: ['items', params],
-    queryFn: ({ pageParam }) => api.get<ItemsResponse>(`/api/items${qs({ ...params, page: pageParam, limit: 60 })}`),
+    queryFn: ({ pageParam }) => api.get<ItemsResponse>(`/api/items${qs({ ...params, page: pageParam, limit: isRandom ? 120 : 60 })}`),
     initialPageParam: 1,
-    getNextPageParam: (last) => (last.hasMore ? last.page + 1 : undefined),
-    refetchInterval: (q) => (q.state.data?.pages.some((p) => p.items.some((i) => i.queue_state !== 'idle' || i.analysis_status === 'running')) ? 5000 : false),
+    // RANDOM() is re-rolled per request, so "Surprise me" is a single shuffled page (no pagination, no polling reshuffle).
+    getNextPageParam: (last) => (!isRandom && last.hasMore ? last.page + 1 : undefined),
+    refetchInterval: (q) => (!isRandom && q.state.data?.pages.some((p) => p.items.some((i) => i.queue_state !== 'idle' || i.analysis_status === 'running')) ? 5000 : false),
   });
   const facets = useQuery({ queryKey: ['facets'], queryFn: () => api.get<Facets>('/api/facets'), staleTime: 30_000 });
-  const items = useMemo(() => query.data?.pages.flatMap((p) => p.items) || [], [query.data]);
+  const items = useMemo(() => {
+    const seen = new Set<string>();
+    return (query.data?.pages.flatMap((p) => p.items) || []).filter((i) => (seen.has(i.id) ? false : (seen.add(i.id), true)));
+  }, [query.data]);
   const total = query.data?.pages[0]?.total ?? 0;
   const loadMore = useCallback(() => { if (query.hasNextPage && !query.isFetchingNextPage) query.fetchNextPage(); }, [query]);
   const sentinel = useInfiniteScroll(loadMore, !!query.hasNextPage);

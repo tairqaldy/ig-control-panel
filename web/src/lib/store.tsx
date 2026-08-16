@@ -20,9 +20,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await qc.invalidateQueries({ queryKey: ['auth'] });
   }, [qc]);
   const logout = useCallback(async () => {
-    await api.post('/api/auth/logout');
-    qc.clear();
-    await qc.invalidateQueries({ queryKey: ['auth'] });
+    try { await api.post('/api/auth/logout'); } finally {
+      try { sessionStorage.clear(); } catch {}
+      qc.clear();
+      window.location.assign('/'); // hard reload: guarantees no cached data survives the session
+    }
   }, [qc]);
   const value = useMemo<AuthCtx>(() => ({
     authenticated: !!q.data?.authenticated, username: q.data?.username ?? null, setupIssues: q.data?.setupIssues ?? [], loginEnabled: q.data?.loginEnabled ?? true,

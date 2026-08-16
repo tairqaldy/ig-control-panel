@@ -1,15 +1,28 @@
 import { db } from '../db.js';
+import { config } from '../config.js';
 import { bufferToEmbedding, cosine, embedTexts } from './openai.js';
 
 /** In-memory embedding cache for fast semantic search over a few thousand items. */
 const cache = new Map<string, Float32Array>();
 let loaded = false;
 
+/** Only vectors from the CURRENT model:dims are comparable. Others are dropped (and re-embedded lazily by the worker). */
+export function currentEmbeddingTag(): string { return `${config.embedModel}:${config.embedDims}`; }
+
 export function loadEmbeddings(force = false) {
   if (loaded && !force) return;
   cache.clear();
-  const rows = db().prepare('SELECT id, embedding FROM items WHERE embedding IS NOT NULL AND archived = 0').all() as Array<{ id: string; embedding: Buffer }>;
-  for (const r of rows) cache.set(r.id, bufferToEmbedding(r.embedding));
+  const tag = currentEmbeddingTag();
+  const rows = db().prepare('SELECT id, embedding, embedding_model FROM items WHERE embedding IS NOT NULL AND archived = 0').all() as Array<{ id: string; embedding: Buffer; embedding_model: string | null }>;
+  let mismatched = 0;
+  for (const r of rows) {
+    if (r.embedding_model && r.embedding_model !== tag) { mismatched++; continue; }
+    cache.set(r.id, bufferToEmbedding(r.embedding));
+  }
+  if (mismatched) {
+    console.warn(`[embeddings] ${mismatched} vectors were made with a different model/dims than ${tag} — clearing them so they get re-embedded.`);
+    db().prepare('UPDATE items SET embedding = NULL WHERE embedding_model IS NOT NULL AND embedding_model != ?').run(tag);
+  }
   loaded = true;
 }
 export function setEmbedding(id: string, vec: Float32Array) { loadEmbeddings(); cache.set(id, vec); }

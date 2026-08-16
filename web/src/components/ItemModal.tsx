@@ -60,7 +60,9 @@ export function ItemModal() {
   const [tagsInput, setTagsInput] = useState('');
   const [frameIdx, setFrameIdx] = useState(0);
   const [dirty, setDirty] = useState(false);
-  useEffect(() => { if (item) { setNotes(item.user_notes || ''); setTagsInput(item.user_tags.join(', ')); setDirty(false); setFrameIdx(0); } }, [item?.id, item?.updated_at]);
+  // Reset the editor when a different item opens; on background refetches of the same item keep unsaved edits.
+  useEffect(() => { if (item) { setNotes(item.user_notes || ''); setTagsInput(item.user_tags.join(', ')); setDirty(false); setFrameIdx(0); } }, [item?.id]);
+  useEffect(() => { if (item && !dirty) { setNotes(item.user_notes || ''); setTagsInput(item.user_tags.join(', ')); } }, [item?.updated_at]);
 
   const invalidate = () => { qc.invalidateQueries({ queryKey: ['item', id] }); qc.invalidateQueries({ queryKey: ['items'] }); qc.invalidateQueries({ queryKey: ['stats'] }); qc.invalidateQueries({ queryKey: ['facets'] }); };
   const patch = useMutation({ mutationFn: (body: Record<string, unknown>) => api.patch(`/api/items/${id}`, body), onSuccess: invalidate });

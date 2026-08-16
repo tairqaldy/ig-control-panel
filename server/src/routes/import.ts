@@ -17,14 +17,16 @@ function afterImport(allIds: string[], autoAnalyze: boolean) {
   const ids = allIds.filter((id) => !!need.get(id));
   if (!ids.length) return { queued: 0 };
   if (hasOpenAI() && autoAnalyze) return { queued: worker.enqueue(ids) };
-  // No key: still fetch media promptly (URLs expire) — light background loop, sequential.
+  // No key, or auto-analyze off: still fetch media promptly (URLs expire) — but never run the paid analysis.
   (async () => {
     for (const id of ids) {
-      try { await processItem(id, {}); } catch {}
+      try { await processItem(id, { mediaOnly: true }); } catch {}
     }
   })();
   return { queued: 0, mediaOnly: true };
 }
+
+const MAX_ZIP_BYTES = 400 * 1024 * 1024;
 
 /** Harvester JSON (multipart file field "file" or raw JSON body). */
 importRoutes.post('/harvest', async (c) => {
@@ -58,6 +60,7 @@ importRoutes.post('/instagram-export', async (c) => {
   const f = form.get('file');
   if (!f || typeof f === 'string') return c.json({ error: 'file missing' }, 400);
   const includeLiked = form.get('include_liked') === '1';
+  if ((f as File).size > MAX_ZIP_BYTES) return c.json({ error: `That ZIP is ${Math.round((f as File).size / 1e6)} MB — too big to process in memory. Request the export with only "Saved" (and "Likes") selected, JSON format, media quality "low", and upload that part (usually a few MB).` }, 413);
   const buf = Buffer.from(await (f as File).arrayBuffer());
   let parsed;
   try { parsed = parseInstagramExportZip(buf, { includeLiked }); } catch (e: any) { return c.json({ error: `Could not read zip: ${e.message}` }, 400); }

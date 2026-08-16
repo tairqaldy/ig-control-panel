@@ -90,7 +90,11 @@ export default function Ask() {
 
   useEffect(() => { sessionStorage.setItem(STORAGE, JSON.stringify(turns.map((t) => ({ ...t, streaming: false })))); }, [turns]);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [turns.length, turns[turns.length - 1]?.content.length]);
-  useEffect(() => { const q = sp.get('q'); if (q) { setSp({}, { replace: true }); void ask(q); } }, []);
+  // Honour ?q= on mount AND whenever it changes while already on /ask ("Ask about this" from the modal, palette).
+  const pendingQ = sp.get('q');
+  useEffect(() => { if (pendingQ) { setSp({}, { replace: true }); void ask(pendingQ); } }, [pendingQ]);
+  // Abort an in-flight answer if the user navigates away.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   async function ask(question: string) {
     const qn = question.trim();

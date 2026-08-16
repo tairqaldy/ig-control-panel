@@ -103,7 +103,8 @@ webhooks.get('/instagram', (c) => {
 webhooks.post('/instagram', async (c) => {
   const raw = await c.req.text();
   if (!verifySignature(raw, c.req.header('x-hub-signature-256'))) {
-    logSystemEvent('Webhook rejected: bad signature', null, 'error');
+    const why = metaConfig().appSecret ? 'bad signature' : 'unsigned webhook while an access token is configured — set META_APP_SECRET (Meta app → Settings → Basic → App Secret)';
+    logSystemEvent(`Webhook rejected: ${why}`, null, 'error');
     return c.text('Bad signature', 401);
   }
   let body: any = null;

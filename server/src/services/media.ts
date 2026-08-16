@@ -33,7 +33,24 @@ export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
+/** Only fetch public http(s) hosts — never loopback/private/link-local (SSRF guard for URLs coming from import files). */
+export function isSafeUrl(url: string): boolean {
+  let u: URL;
+  try { u = new URL(url); } catch { return false; }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (!h || h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal')) return false;
+  if (h === '::1' || h.startsWith('fe80:') || h.startsWith('fc') || h.startsWith('fd')) return false;
+  const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (m) {
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    if (a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127)) return false;
+  }
+  return true;
+}
+
 export async function download(url: string, opts: { maxBytes?: number; timeoutMs?: number; retries?: number } = {}): Promise<{ buf: Buffer; contentType: string }> {
+  if (!isSafeUrl(url)) throw new HttpError(400, `Refusing to fetch non-public URL: ${url.slice(0, 60)}`);
   const retries = opts.retries ?? 2;
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -60,12 +77,14 @@ export async function download(url: string, opts: { maxBytes?: number; timeoutMs
 }
 
 export function itemDir(itemId: string): string {
-  const d = path.join(config.mediaDir, safeName(itemId));
+  const name = safeName(itemId);
+  if (!name) throw new Error('invalid item id');
+  const d = path.join(config.mediaDir, name);
   fs.mkdirSync(d, { recursive: true });
   return d;
 }
 export function safeName(s: string): string {
-  return s.replace(/[^a-zA-Z0-9_-]/g, '_');
+  return String(s || '').replace(/[^a-zA-Z0-9_-]/g, '_').replace(/^_+$/, '');
 }
 
 /** Save a thumbnail (webp, max 640px wide) and return relative media path. */
@@ -137,7 +156,11 @@ export function mediaAbs(rel: string): string {
 }
 
 export async function removeItemMedia(itemId: string) {
+  const name = safeName(itemId);
+  if (!name) return; // never resolve to the media root itself
+  const target = path.resolve(config.mediaDir, name);
+  if (!target.startsWith(path.resolve(config.mediaDir) + path.sep)) return;
   try {
-    await fsp.rm(path.join(config.mediaDir, safeName(itemId)), { recursive: true, force: true });
+    await fsp.rm(target, { recursive: true, force: true });
   } catch {}
 }

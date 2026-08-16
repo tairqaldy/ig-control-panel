@@ -35,7 +35,7 @@ Skipped = there was nothing to analyze (no caption, no transcript, no fetchable 
 
 ### Multiple Instagram accounts?
 
-Run one Resurface instance per account (it's single-user by design). Or import both harvests into one library — the `account` field is stored per import, and creators/tags mix fine.
+Run one Resurface instance per account (it's single-user by design). Or import both harvests into one library — saves simply merge (creators/tags mix fine); the dashboard shows the username from the most recent harvest.
 
 ### Can I use another LLM?
 

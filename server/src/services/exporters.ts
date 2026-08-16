@@ -62,7 +62,9 @@ export function toExportItem(r: ItemRow, publicBase = ''): ExportItem {
 
 function csvCell(v: unknown): string {
   if (v === null || v === undefined) return '';
-  const s = Array.isArray(v) ? v.join('; ') : typeof v === 'object' ? JSON.stringify(v) : String(v);
+  let s = Array.isArray(v) ? v.join('; ') : typeof v === 'object' ? JSON.stringify(v) : String(v);
+  // Spreadsheet formula injection guard (OWASP): captions/AI text starting with = + - @ or tab/CR must not be evaluated by Excel/Sheets.
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 

@@ -10,7 +10,7 @@ One Docker container. One SQLite file. No queues, no Redis, no Postgres, no serv
 │   ├─ /api/auth        cookie session (HMAC), rate-limited login            │
 │   ├─ /api/items       list/filter/search, detail (+related), patch, bulk   │
 │   ├─ /api/import      harvester JSON · Instagram export ZIP · URLs         │
-│   ├─ /api/jobs        worker status/pause/resume/queue/retry/reindex       │
+│   ├─ /api/jobs        status · pause · resume · queue · clear · concurrency · reindex       │
 │   ├─ /api/export      json · csv · md · obsidian(zip)                      │
 │   ├─ /api/ask         SSE: sources + streamed answer (RAG)                 │
 │   ├─ /api/resurface   daily picks (deterministic per day) + notes          │
