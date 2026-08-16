@@ -359,7 +359,17 @@ function itemGraph(t: number, o: ItemGraphOpts) {
   }
   if (o.includeCategoryHubs) for (const [cat, n] of catCount) nodes.push({ id: `cat:${cat}`, type: 'category', label: cat, count: n, category: cat });
   for (const tg of usedTags) nodes.push({ id: `tag:${tg}`, type: 'tag', label: tg, count: tagCount.get(tg) });
-  for (const a of usedAuthors) nodes.push({ id: `author:${a}`, type: 'author', label: `@${a}`, author: a, count: authorCount.get(a) });
+  if (usedAuthors.size) {
+    // creator avatar = their most-liked save that has a thumbnail
+    const names = Array.from(usedAuthors);
+    const rows2 = d.prepare(`SELECT author_username AS name, thumb_path FROM items WHERE ${G_WHERE} AND author_username IN (${names.map(() => '?').join(',')}) AND thumb_path IS NOT NULL ORDER BY COALESCE(like_count, 0) DESC`).all(t, ...names) as Array<{ name: string; thumb_path: string }>;
+    const thumbOf = new Map<string, string>();
+    for (const r of rows2) if (!thumbOf.has(r.name)) thumbOf.set(r.name, r.thumb_path);
+    for (const a of names) {
+      const th = thumbOf.get(a);
+      nodes.push({ id: `author:${a}`, type: 'author', label: `@${a}`, author: a, count: authorCount.get(a), thumb: th ? `/media/${th}` : null });
+    }
+  }
   nodes.push(...itemNodes);
   if (o.includeSimilar && o.similarPerItem > 0) {
     // top-N strongest neighbors per item, undirected, above the threshold (edges only among this tenant's selected items)

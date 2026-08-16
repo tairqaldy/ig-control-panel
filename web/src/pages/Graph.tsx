@@ -25,6 +25,7 @@ import GraphInfoPanel from '../components/graph/GraphInfoPanel';
  */
 export default function Graph() {
   const fgRef = useRef<ForceGraphMethods<SimNode, SimLink> | undefined>(undefined);
+  const fitRef = useRef<(() => void) | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const modal = useItemModal();
   const { theme } = useTheme();
@@ -134,7 +135,7 @@ export default function Graph() {
     setTouched(true);
     if (node.type === 'item') { modal.open(node.id); return; }
     if (node.type === 'category' && view === 'overview') { setView('category', node.label); return; }
-    if (selectedId === node.id) { setSelectedId(null); fgRef.current?.zoomToFit(600, 50); return; }
+    if (selectedId === node.id) { setSelectedId(null); fitRef.current?.(); return; }
     setSelectedId(node.id);
     if (view !== 'overview') {
       const ids = new Set([node.id, ...(neighbors.get(node.id) || [])]);
@@ -226,6 +227,7 @@ export default function Graph() {
               activeSet={activeSet}
               selectedId={selectedId}
               fontsReady={fontsReady}
+              fitRef={fitRef}
               onHover={setHover}
               onNodeClick={onNodeClick}
               onBackgroundClick={() => { setSelectedId(null); setTouched(true); }}
@@ -245,14 +247,14 @@ export default function Graph() {
         onQuery={(v) => { setQuery(v); if (v) setTouched(true); }}
         onMode={setView}
         onBack={() => setView('overview')}
-        onFit={() => { setSelectedId(null); fgRef.current?.zoomToFit(600, view === 'overview' ? 70 : 50); }}
+        onFit={() => { setSelectedId(null); fitRef.current?.(); }}
         tune={tune}
         onTune={(patch) => setTune((t) => ({ ...t, ...patch }))}
       />
 
       {/* Hint: two lines, gone for good after the first click, search or drag */}
       <AnimatePresence>
-        {!touched && !selected && !isEmpty && !gq.isLoading && (
+        {!touched && !selected && !isEmpty && !gq.isLoading && view === 'overview' && (
           <motion.div
             initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.4, delay: 0.6 }}
             className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center px-4"

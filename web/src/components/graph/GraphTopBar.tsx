@@ -40,7 +40,7 @@ export default function GraphTopBar({ mode, category, meta, nodeCount, linkCount
     ? [`${n(meta?.totalAnalyzed)} saves`, `${n(meta?.tags)} tags`, meta?.capped ? `${n(meta?.items)} newest shown` : ''].filter(Boolean).join(' · ')
     : mode === 'all'
       ? [`${n(meta?.items)} saves`, `${n(meta?.tags)} tags`, `${n(linkCount)} links`].filter(Boolean).join(' · ')
-      : [`${cats.length} categories`, `${n(meta?.totals.items)} saves`, `${n(meta?.totals.tags)} tags`].filter(Boolean).join(' · ');
+      : `${cats.length} categories · ${n(meta?.totals.items)} saves`;
 
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start gap-2 p-3 sm:p-4">
