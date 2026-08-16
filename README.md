@@ -19,6 +19,15 @@ Open source (MIT) · one Docker container · <a href="https://resurfly.com">resu
 
 ---
 
+<p align="center">
+  <a href="https://resurfly.com"><img src="web/public/landing/shots/ask.jpg" width="880" alt="Ask: a question about saved reels answered with citations to the exact saves" /></a>
+</p>
+<p align="center">
+  <img src="web/public/landing/shots/library.jpg" width="290" alt="Library" />
+  <img src="web/public/landing/shots/analytics.jpg" width="290" alt="Instagram analytics" />
+  <img src="web/public/landing/shots/automations.jpg" width="290" alt="DM automations" />
+</p>
+
 You saved 4,000 reels "for later". Later never came. Resurfly digs them all up and turns each one into clean, structured knowledge:
 
 - **Every save, analyzed** — reels get transcribed (speech → text), key frames are read by a vision model, carousels are read slide by slide. Out comes a rephrased title, one-liner, summary, the actual key points (the 5 tips *are* the 5 tips), actionable takeaways, tags, category, entities (tools, people, brands, places), hook analysis, quotes, on-screen text, usefulness score, "why you probably saved this", and a remix idea for creators.
