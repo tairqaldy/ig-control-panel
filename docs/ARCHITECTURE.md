@@ -97,6 +97,10 @@ Design: "bone / ink / jade" — warm paper background with a faint grain, Instru
 
 Manifest V3, plain JavaScript, no bundler. `background.js` (service worker: 6-hour alarm → sync, resumable first run, badge), `popup.*` (pair, status, Sync now, the server-side opt-in switch), `options.*` (app URL for self-hosters via `chrome.permissions.request`, unpair), `lib/core.js` (copy of `harvester/core.js`), `lib/sync.js` (pagination, stop rules, chunked upload, login detection), `lib/api.js`, `lib/store.js`. Host permissions: `https://www.instagram.com/*` and `https://resurfly.com/*` only; `cookies` is optional and requested only for the background-harvest opt-in. Details: [COMPANION.md](COMPANION.md).
 
+## Backups (`services/backup.ts`)
+
+Optional, on when `R2_ENDPOINT/R2_BUCKET/R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY` are set (any S3-compatible bucket; we use Cloudflare R2). Once a day at `BACKUP_HOUR_UTC` (03:00 by default) the server runs `VACUUM INTO` (a consistent snapshot, safe with WAL), gzips it and PUTs `backups/resurface-YYYYMMDD-HHmm.db.gz` with a hand-rolled SigV4 request (no SDK), then prunes to `BACKUP_KEEP` (14). Owner endpoints: `GET /api/admin/backup` (status + object list) and `POST /api/admin/backup` (run now). Media (thumbnails/frames) is not included — it is re-fetchable and not needed to restore the notes; to restore, gunzip the file to `$DATA_DIR/resurface.db` while the server is stopped.
+
 ## Security model
 
 - Session cookie `rs_session` = base64url(payload).HMAC-SHA256(secret); payload carries tenant + user; 30 days; `Secure` when behind HTTPS (`x-forwarded-proto`). Self-host: credentials from env; hosted: scrypt password hashes in `users`.

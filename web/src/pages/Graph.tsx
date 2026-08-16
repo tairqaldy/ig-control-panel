@@ -165,7 +165,7 @@ export default function Graph() {
     setTimeout(() => fgRef.current?.zoomToFit(700, 60, (n: any) => ids.has(n.id)), 400);
   }, [focusParam, data.nodes, neighbors]);
 
-  /** Read-only handle for screenshot/e2e harnesses: node positions and their on-screen coordinates. */
+  /** Read-only handle for screenshot/e2e harnesses: node positions and their viewport coordinates. */
   useEffect(() => {
     (window as any).__resurflyGraph = {
       mode: view,
@@ -174,7 +174,9 @@ export default function Graph() {
         const n = data.nodes.find((m) => m.id === id);
         const fg = fgRef.current;
         if (!n || !fg || n.x === undefined || n.y === undefined) return null;
-        return fg.graph2ScreenCoords(n.x, n.y);
+        const p = fg.graph2ScreenCoords(n.x, n.y);
+        const rect = wrapRef.current?.querySelector('canvas')?.getBoundingClientRect();
+        return rect ? { x: p.x + rect.left, y: p.y + rect.top } : p;
       },
     };
     return () => { delete (window as any).__resurflyGraph; };
