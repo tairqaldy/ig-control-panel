@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { db, j, now } from '../db.js';
+import { tid } from '../auth.js';
 import type { Analysis, ItemRow } from '../types.js';
 import { keywordSearch, indexItem, normalizeTag } from '../services/search.js';
 import { neighborsOf, semanticSearch, dropEmbedding, setEmbedding } from '../services/neighbors.js';
@@ -88,7 +89,18 @@ const SORTS: Record<string, string> = {
   random: 'RANDOM()',
 };
 
+/** One item of the current tenant (or undefined). */
+function ownItem(t: number, id: string): ItemRow | undefined {
+  return db().prepare('SELECT * FROM items WHERE id = ? AND tenant_id = ?').get(id, t) as ItemRow | undefined;
+}
+/** Filter a list of ids down to those belonging to the tenant (order preserved). */
+function ownedIds(t: number, ids: string[]): string[] {
+  const chk = db().prepare('SELECT 1 FROM items WHERE id = ? AND tenant_id = ?');
+  return ids.filter((id) => !!chk.get(id, t));
+}
+
 items.get('/', async (c) => {
+  const t = tid(c);
   const q = c.req.query('q')?.trim() || '';
   const category = c.req.query('category') || '';
   const tag = c.req.query('tag') || '';
@@ -108,8 +120,8 @@ items.get('/', async (c) => {
   const page = Math.max(1, Number(c.req.query('page') || 1));
   const limit = Math.min(200, Math.max(1, Number(c.req.query('limit') || 60)));
 
-  const where: string[] = ['i.archived = ?', 'i.excluded = ?'];
-  const params: unknown[] = [archived ? 1 : 0, excluded ? 1 : 0];
+  const where: string[] = ['i.tenant_id = ?', 'i.archived = ?', 'i.excluded = ?'];
+  const params: unknown[] = [t, archived ? 1 : 0, excluded ? 1 : 0];
   if (category) { where.push("json_extract(i.analysis, '$.category') = ?"); params.push(category); }
   if (tag) { where.push('EXISTS (SELECT 1 FROM item_tags t WHERE t.item_id = i.id AND t.tag = ?)'); params.push(tag); }
   if (author) { where.push('i.author_username = ?'); params.push(author); }
@@ -126,18 +138,18 @@ items.get('/', async (c) => {
   let idFilter: string[] | null = null;
   let scoreMap: Map<string, number> | null = null;
   if (q) {
-    const kw = keywordSearch(q, 400);
+    const kw = keywordSearch(t, q, 400);
     let ids = kw.map((r) => r.id);
     scoreMap = new Map(kw.map((r) => [r.id, r.score]));
-    if (semantic && hasOpenAI()) {
+    if (semantic && hasOpenAI(t)) {
       try {
-        const sem = await semanticSearch(q, 80);
+        const sem = await semanticSearch(t, q, 80);
         for (const s of sem) if (s.score > 0.25 && !scoreMap.has(s.id)) { ids.push(s.id); scoreMap.set(s.id, s.score * 20); }
       } catch {}
     }
     // Also match tag prefix and author quickly
     const like = `%${q.toLowerCase()}%`;
-    const extra = db().prepare('SELECT id FROM items WHERE lower(author_username) LIKE ? OR lower(author_name) LIKE ? LIMIT 100').all(like, like) as Array<{ id: string }>;
+    const extra = db().prepare('SELECT id FROM items WHERE tenant_id = ? AND (lower(author_username) LIKE ? OR lower(author_name) LIKE ?) LIMIT 100').all(t, like, like) as Array<{ id: string }>;
     for (const e of extra) if (!scoreMap.has(e.id)) { ids.push(e.id); scoreMap.set(e.id, 1); }
     idFilter = ids;
     if (!ids.length) return c.json({ items: [], total: 0, page, limit });
@@ -154,11 +166,12 @@ items.get('/', async (c) => {
 });
 
 items.get('/:id', (c) => {
-  const r = db().prepare('SELECT * FROM items WHERE id = ?').get(c.req.param('id')) as ItemRow | undefined;
+  const t = tid(c);
+  const r = ownItem(t, c.req.param('id'));
   if (!r) return c.json({ error: 'not found' }, 404);
-  const nb = neighborsOf(r.id, 8);
+  const nb = neighborsOf(t, r.id, 8);
   const related = nb.length
-    ? (db().prepare(`SELECT * FROM items WHERE id IN (${nb.map(() => '?').join(',')}) AND archived = 0`).all(...nb.map((n) => n.id)) as ItemRow[])
+    ? (db().prepare(`SELECT * FROM items WHERE tenant_id = ? AND id IN (${nb.map(() => '?').join(',')}) AND archived = 0`).all(t, ...nb.map((n) => n.id)) as ItemRow[])
         .map(lightItem)
         .map((li) => ({ ...li, score: nb.find((n) => n.id === li.id)?.score || 0 }))
         .sort((a, b) => b.score - a.score)
@@ -167,9 +180,10 @@ items.get('/:id', (c) => {
 });
 
 items.patch('/:id', async (c) => {
+  const t = tid(c);
   const id = c.req.param('id');
   const body = await c.req.json<{ favorite?: boolean; archived?: boolean; excluded?: boolean; exclude_reason?: string; user_notes?: string | null; user_tags?: string[]; title?: string; category?: string }>();
-  const r = db().prepare('SELECT * FROM items WHERE id = ?').get(id) as ItemRow | undefined;
+  const r = ownItem(t, id);
   if (!r) return c.json({ error: 'not found' }, 404);
   const patch: Record<string, unknown> = {};
   if (typeof body.favorite === 'boolean') patch.favorite = body.favorite ? 1 : 0;
@@ -185,77 +199,83 @@ items.patch('/:id', async (c) => {
   }
   if (Object.keys(patch).length) {
     const sets = Object.keys(patch).map((k) => `${k} = @${k}`).join(', ');
-    db().prepare(`UPDATE items SET ${sets}, updated_at = @__now WHERE id = @__id`).run({ ...patch, __now: now(), __id: id });
+    db().prepare(`UPDATE items SET ${sets}, updated_at = @__now WHERE id = @__id AND tenant_id = @__tid`).run({ ...patch, __now: now(), __id: id, __tid: t });
     // user tags → item_tags (kind user)
     if (patch.user_tags !== undefined) {
       const d = db();
       d.prepare("DELETE FROM item_tags WHERE item_id = ? AND kind = 'user'").run(id);
       const ins = d.prepare("INSERT OR IGNORE INTO item_tags (item_id, tag, kind) VALUES (?, ?, 'user')");
-      for (const t of JSON.parse(patch.user_tags as string)) ins.run(id, t);
+      for (const tg of JSON.parse(patch.user_tags as string)) ins.run(id, tg);
     }
-    if (typeof body.archived === 'boolean') syncEmbeddingCache(id, body.archived);
-    if (typeof body.excluded === 'boolean') syncEmbeddingCache(id, body.excluded);
-    indexItem(db().prepare('SELECT * FROM items WHERE id = ?').get(id) as ItemRow);
+    if (typeof body.archived === 'boolean') syncEmbeddingCache(t, id, body.archived);
+    if (typeof body.excluded === 'boolean') syncEmbeddingCache(t, id, body.excluded);
+    indexItem(ownItem(t, id)!);
   }
-  return c.json({ item: fullItem(db().prepare('SELECT * FROM items WHERE id = ?').get(id) as ItemRow) });
+  return c.json({ item: fullItem(ownItem(t, id)!) });
 });
 
 /** Exclude (or re-include) everything by a creator — handy for accounts you never want in the system. */
 items.post('/exclude-author', async (c) => {
+  const t = tid(c);
   const body = await c.req.json<{ author: string; excluded?: boolean; reason?: string }>();
   const author = String(body.author || '').trim().replace(/^@/, '');
   if (!author) return c.json({ error: 'author required' }, 400);
   const val = body.excluded === false ? 0 : 1;
   const d = db();
-  const rows = d.prepare('SELECT id FROM items WHERE author_username = ?').all(author) as Array<{ id: string }>;
-  d.prepare("UPDATE items SET excluded = ?, exclude_reason = ?, queue_state = CASE WHEN ? = 1 THEN 'idle' ELSE queue_state END, updated_at = ? WHERE author_username = ?").run(val, val ? (body.reason || `author:${author}`) : null, val, now(), author);
-  for (const r of rows) syncEmbeddingCache(r.id, !!val);
+  const rows = d.prepare('SELECT id FROM items WHERE tenant_id = ? AND author_username = ?').all(t, author) as Array<{ id: string }>;
+  d.prepare("UPDATE items SET excluded = ?, exclude_reason = ?, queue_state = CASE WHEN ? = 1 THEN 'idle' ELSE queue_state END, updated_at = ? WHERE tenant_id = ? AND author_username = ?").run(val, val ? (body.reason || `author:${author}`) : null, val, now(), t, author);
+  for (const r of rows) syncEmbeddingCache(t, r.id, !!val);
   return c.json({ ok: true, n: rows.length, author, excluded: !!val });
 });
 
 /** Keep the in-memory embedding cache in sync with archive/exclude state. */
-function syncEmbeddingCache(id: string, hidden: boolean) {
-  const r = db().prepare('SELECT embedding, archived, excluded FROM items WHERE id = ?').get(id) as { embedding: Buffer | null; archived: number; excluded: number } | undefined;
-  if (hidden || !r || r.archived || r.excluded) { dropEmbedding(id); return; }
-  if (r.embedding) setEmbedding(id, bufferToEmbedding(r.embedding));
+function syncEmbeddingCache(t: number, id: string, hidden: boolean) {
+  const r = db().prepare('SELECT embedding, archived, excluded FROM items WHERE id = ? AND tenant_id = ?').get(id, t) as { embedding: Buffer | null; archived: number; excluded: number } | undefined;
+  if (hidden || !r || r.archived || r.excluded) { dropEmbedding(t, id); return; }
+  if (r.embedding) setEmbedding(t, id, bufferToEmbedding(r.embedding));
 }
 
 const BULK_ACTIONS = new Set(['favorite', 'unfavorite', 'archive', 'unarchive', 'exclude', 'include', 'reanalyze', 'delete', 'add_tag']);
 
 items.post('/:id/reanalyze', async (c) => {
+  const t = tid(c);
   const id = c.req.param('id');
   const body = await c.req.json<{ media?: boolean }>().catch(() => ({ media: false }));
-  const r = db().prepare('SELECT id, queue_state FROM items WHERE id = ?').get(id) as any;
+  const r = db().prepare('SELECT id, queue_state FROM items WHERE id = ? AND tenant_id = ?').get(id, t) as any;
   if (!r) return c.json({ error: 'not found' }, 404);
   if (r.queue_state === 'running') return c.json({ error: 'This save is being processed right now — try again in a moment.' }, 409);
   if (!resetItemForReprocess(id, { media: !!body.media })) return c.json({ error: 'Could not reset this save (is it processing?)' }, 409);
-  worker.enqueue([id], { force: true });
-  return c.json({ ok: true });
+  const q = worker.enqueue(t, [id], { force: true });
+  return c.json({ ok: true, ...q });
 });
 
 items.delete('/:id', async (c) => {
+  const t = tid(c);
   const id = c.req.param('id');
-  db().prepare('DELETE FROM items WHERE id = ?').run(id);
+  const n = db().prepare('DELETE FROM items WHERE id = ? AND tenant_id = ?').run(id, t).changes;
+  if (!n) return c.json({ error: 'not found' }, 404);
   db().prepare('DELETE FROM items_fts WHERE item_id = ?').run(id);
-  dropEmbedding(id);
+  dropEmbedding(t, id);
   await removeItemMedia(id);
   return c.json({ ok: true });
 });
 
 /** Bulk operations */
 items.post('/bulk', async (c) => {
+  const t = tid(c);
   const body = await c.req.json<{ ids: string[]; action: 'favorite' | 'unfavorite' | 'archive' | 'unarchive' | 'exclude' | 'include' | 'reanalyze' | 'delete' | 'add_tag'; tag?: string }>();
-  const ids = (body.ids || []).map(String).filter((s) => s.trim()).slice(0, 5000);
+  const ids = ownedIds(t, (body.ids || []).map(String).filter((s) => s.trim()).slice(0, 5000));
   if (!ids.length) return c.json({ ok: true, n: 0 });
   if (!BULK_ACTIONS.has(body.action)) return c.json({ error: `unknown action ${body.action}` }, 400);
   const d = db();
   let n = 0;
   if (body.action === 'reanalyze') {
     const ready = ids.filter((id) => resetItemForReprocess(id));
-    n = worker.enqueue(ready, { force: true });
+    const q = worker.enqueue(t, ready, { force: true });
+    return c.json({ ok: true, n: q.queued, ...q });
   } else if (body.action === 'delete') {
-    const del = d.prepare('DELETE FROM items WHERE id = ?');
-    d.transaction(() => { for (const id of ids) { n += del.run(id).changes; d.prepare('DELETE FROM items_fts WHERE item_id = ?').run(id); dropEmbedding(id); } })();
+    const del = d.prepare('DELETE FROM items WHERE id = ? AND tenant_id = ?');
+    d.transaction(() => { for (const id of ids) { n += del.run(id, t).changes; d.prepare('DELETE FROM items_fts WHERE item_id = ?').run(id); dropEmbedding(t, id); } })();
     for (const id of ids) await removeItemMedia(id);
   } else if (body.action === 'add_tag') {
     const tag = normalizeTag(body.tag || '');
@@ -263,24 +283,24 @@ items.post('/bulk', async (c) => {
     const ins = d.prepare("INSERT OR IGNORE INTO item_tags (item_id, tag, kind) VALUES (?, ?, 'user')");
     d.transaction(() => {
       for (const id of ids) {
-        const r = d.prepare('SELECT user_tags FROM items WHERE id = ?').get(id) as any;
+        const r = d.prepare('SELECT user_tags FROM items WHERE id = ? AND tenant_id = ?').get(id, t) as any;
         if (!r) continue;
         const tags = Array.from(new Set([...j<string[]>(r.user_tags, []), tag]));
-        d.prepare('UPDATE items SET user_tags = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(tags), now(), id);
+        d.prepare('UPDATE items SET user_tags = ?, updated_at = ? WHERE id = ? AND tenant_id = ?').run(JSON.stringify(tags), now(), id, t);
         ins.run(id, tag); n++;
       }
     })();
   } else if (body.action === 'exclude' || body.action === 'include') {
     const val = body.action === 'exclude' ? 1 : 0;
-    const upd = d.prepare("UPDATE items SET excluded = ?, exclude_reason = ?, queue_state = CASE WHEN ? = 1 THEN 'idle' ELSE queue_state END, updated_at = ? WHERE id = ?");
-    d.transaction(() => { for (const id of ids) n += upd.run(val, val ? (body.tag || 'manual') : null, val, now(), id).changes; })();
-    for (const id of ids) syncEmbeddingCache(id, !!val);
+    const upd = d.prepare("UPDATE items SET excluded = ?, exclude_reason = ?, queue_state = CASE WHEN ? = 1 THEN 'idle' ELSE queue_state END, updated_at = ? WHERE id = ? AND tenant_id = ?");
+    d.transaction(() => { for (const id of ids) n += upd.run(val, val ? (body.tag || 'manual') : null, val, now(), id, t).changes; })();
+    for (const id of ids) syncEmbeddingCache(t, id, !!val);
   } else {
     const col = body.action.includes('favorite') ? 'favorite' : 'archived';
     const val = body.action.startsWith('un') ? 0 : 1;
-    const upd = d.prepare(`UPDATE items SET ${col} = ?, updated_at = ? WHERE id = ?`);
-    d.transaction(() => { for (const id of ids) n += upd.run(val, now(), id).changes; })();
-    if (col === 'archived') for (const id of ids) syncEmbeddingCache(id, !!val);
+    const upd = d.prepare(`UPDATE items SET ${col} = ?, updated_at = ? WHERE id = ? AND tenant_id = ?`);
+    d.transaction(() => { for (const id of ids) n += upd.run(val, now(), id, t).changes; })();
+    if (col === 'archived') for (const id of ids) syncEmbeddingCache(t, id, !!val);
   }
   return c.json({ ok: true, n });
 });

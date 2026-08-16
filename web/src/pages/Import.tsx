@@ -7,6 +7,7 @@ import { api } from '../lib/api';
 import { PageHeader, Tabs, Field, Toggle } from '../components/ui';
 import { AnalysisPlan } from '../components/AnalysisPlan';
 import { useWorkerStatus } from '../components/Shell';
+import { useQuota } from '../lib/store';
 import { cn, copyText, fmtAgo } from '../lib/utils';
 
 type Tab = 'harvester' | 'export' | 'urls';
@@ -38,6 +39,7 @@ export default function Import() {
   const [script, setScript] = useState<string>('');
   const bookmarkletRef = useRef<HTMLAnchorElement>(null);
   const worker = useWorkerStatus();
+  const { openUpgrade, refreshPlan } = useQuota();
   const history = useQuery({ queryKey: ['imports'], queryFn: () => api.get<{ imports: any[] }>('/api/import/history') });
   const token = useQuery({ queryKey: ['upload-token'], queryFn: () => api.post<{ token: string; expiresAt: number }>('/api/import/token'), staleTime: 60 * 60_000 });
   useEffect(() => { fetch('/harvester.js').then((r) => r.text()).then(setScript).catch(() => {}); }, []);
@@ -49,7 +51,9 @@ export default function Import() {
 
   const done = (r: any) => {
     toast.success(`Imported ${r.total}: ${r.created} new, ${r.updated} updated${r.queued ? ` · ${r.queued} queued for analysis` : ''}`);
-    qc.invalidateQueries({ queryKey: ['items'] }); qc.invalidateQueries({ queryKey: ['stats'] }); qc.invalidateQueries({ queryKey: ['jobs-status'] }); qc.invalidateQueries({ queryKey: ['imports'] }); qc.invalidateQueries({ queryKey: ['facets'] });
+    // Hosted: the server queues only what fits the plan allowance and reports the rest as leftOut.
+    if (r.leftOut > 0) toast(`${Number(r.leftOut).toLocaleString()} saves are waiting for a bigger plan`, { action: { label: 'Upgrade', onClick: () => openUpgrade({ reason: `Analyze the ${Number(r.leftOut).toLocaleString()} saves that didn't fit your allowance` }) }, duration: 8000 });
+    qc.invalidateQueries({ queryKey: ['items'] }); qc.invalidateQueries({ queryKey: ['stats'] }); qc.invalidateQueries({ queryKey: ['jobs-status'] }); qc.invalidateQueries({ queryKey: ['imports'] }); qc.invalidateQueries({ queryKey: ['facets'] }); void refreshPlan();
   };
   const upHarvest = useMutation({ mutationFn: (f: File) => { const fd = new FormData(); fd.append('file', f); fd.append('auto_analyze', autoAnalyze ? '1' : '0'); return api.post<any>('/api/import/harvest', fd); }, onSuccess: done, onError: (e: any) => toast.error(e.message) });
   const upExport = useMutation({ mutationFn: (f: File) => { const fd = new FormData(); fd.append('file', f); fd.append('auto_analyze', autoAnalyze ? '1' : '0'); fd.append('include_liked', includeLiked ? '1' : '0'); return api.post<any>('/api/import/instagram-export', fd); }, onSuccess: done, onError: (e: any) => toast.error(e.message) });

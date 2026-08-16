@@ -51,9 +51,10 @@ export async function processItem(id: string, opts: ProcessOptions = {}): Promis
   if (!item) throw new Error(`item ${id} not found`);
   if (item.excluded) return; // excluded saves are never processed
 
+  const tid = item.tenant_id;
   // Re-run the media stage when: pending; forced retry after failure; or a partial run that has no transcript yet
   // (e.g. transcription died on a quota error) while the policy wants one and the CDN links are still fresh.
-  const scope = getScope();
+  const scope = getScope(tid);
   const urlsFresh = !!item.media_urls_fetched_at && now() - item.media_urls_fetched_at < 1.2 * 86400;
   const wantsTranscript = item.media_type === 'video' && !item.transcript && shouldTranscribe(scope, item.duration) && urlsFresh && !!j<MediaUrls | null>(item.media_urls, null)?.video;
   const mediaNeeded = item.media_status === 'pending' || (opts.force && item.media_status === 'failed') || (item.media_status === 'partial' && wantsTranscript);
@@ -74,7 +75,7 @@ export async function processItem(id: string, opts: ProcessOptions = {}): Promis
 
   // ---- Stage 2: analysis ----
   if (item.analysis_status !== 'done' || opts.force) {
-    if (!hasOpenAI()) {
+    if (!hasOpenAI(tid)) {
       setItem(id, { analysis_status: 'pending', analysis_error: 'OpenAI API key not configured' });
       return;
     }
@@ -96,7 +97,7 @@ export async function processItem(id: string, opts: ProcessOptions = {}): Promis
       log(id, `analysis failed: ${msg}`);
       setItem(id, { analysis_status: msg.startsWith('SKIP:') ? 'skipped' : 'failed', analysis_error: msg, attempts: item.attempts + 1 });
     }
-  } else if (!item.embedding && hasOpenAI()) {
+  } else if (!item.embedding && hasOpenAI(tid)) {
     // Analyzed earlier but the embedding is missing/mismatched → just embed.
     try { await runEmbeddingStage(item); setItem(id, { analysis_error: null }); } catch (e: any) { log(id, `embedding retry failed: ${e?.message || e}`); }
   }
@@ -105,6 +106,7 @@ export async function processItem(id: string, opts: ProcessOptions = {}): Promis
 async function runMediaStage(itemIn: ItemRow) {
   let item = itemIn;
   const id = item.id;
+  const tid = item.tenant_id;
   let urls = j<MediaUrls | null>(item.media_urls, null);
   const patch: Record<string, unknown> = {};
 
@@ -151,7 +153,7 @@ async function runMediaStage(itemIn: ItemRow) {
     }
   }
 
-  const scope = getScope();
+  const scope = getScope(tid);
   // Carousel slides → frames for vision (up to 6), each also stored as webp
   if (item.media_type === 'carousel' && urls.carousel?.length) {
     const slides = urls.carousel.slice(0, Math.max(1, Math.min(6, scope.frames || 1)));
@@ -193,7 +195,7 @@ async function runMediaStage(itemIn: ItemRow) {
         }
       } else frames.push(...existingFrames);
       // transcript — only when the policy says so (this is ~30% of the per-save cost)
-      if (needTranscript && hasOpenAI() && (item.duration || 0) <= config.transcribeMaxSeconds) {
+      if (needTranscript && hasOpenAI(tid) && (item.duration || 0) <= config.transcribeMaxSeconds) {
         const audioFile = path.join(config.tmpDir, `${safeName(id)}.mp3`);
         let audioBuf: Buffer | null = null;
         let audioName = 'audio.mp3';
@@ -205,11 +207,11 @@ async function runMediaStage(itemIn: ItemRow) {
         if (audioBuf) {
           try {
             const captionHint = (item.caption || '').slice(0, 200);
-            const tr = await transcribeFile(audioBuf, audioName, { prompt: captionHint ? `Instagram reel. Caption: ${captionHint}` : undefined });
+            const tr = await transcribeFile(tid, audioBuf, audioName, { prompt: captionHint ? `Instagram reel. Caption: ${captionHint}` : undefined });
             transcript = tr.text || '';
             transcriptLang = tr.language || null;
             if (transcript.length < 3) transcript = '';
-            recordUsage(id, { transcribe: { model: models().transcribe, seconds: Math.round(item.duration || (await probeDurationSafe(tmpVideo)) || 30) } });
+            recordUsage(id, { transcribe: { model: models(tid).transcribe, seconds: Math.round(item.duration || (await probeDurationSafe(tmpVideo)) || 30) } });
           } catch (e: any) {
             if (isQuotaError(e)) throw new QuotaError(String(e?.message || e));
             log(id, `transcription failed: ${e?.message || e}`);
@@ -249,6 +251,7 @@ async function runMediaStage(itemIn: ItemRow) {
 
 async function runAnalysisStage(item: ItemRow) {
   const id = item.id;
+  const tid = item.tenant_id;
   const frames = j<string[]>(item.frames, []);
   const images: string[] = [];
   const imageFiles = frames.length ? frames : item.thumb_path ? [item.thumb_path] : [];
@@ -272,11 +275,11 @@ async function runAnalysisStage(item: ItemRow) {
     },
     caption, item.alt_text || '', transcript, transcriptNote,
   );
-  const model = models().analysis;
-  const preferred = preferredTags();
+  const model = models(tid).analysis;
+  const preferred = preferredTags(tid);
   const userWithTags = preferred.length ? `${user}\n\n## Preferred existing tags\nReuse these exact tags when they genuinely fit (add new specific ones as needed): ${preferred.join(', ')}` : user;
   const { data, usage } = await generateStructured<Analysis>({
-    model, system: ANALYSIS_SYSTEM_PROMPT, user: userWithTags, images, schemaName: 'save_analysis', schema: ANALYSIS_JSON_SCHEMA as any, maxOutputTokens: 3000, effort: 'low',
+    tid, model, system: ANALYSIS_SYSTEM_PROMPT, user: userWithTags, images, schemaName: 'save_analysis', schema: ANALYSIS_JSON_SCHEMA as any, maxOutputTokens: 3000, effort: 'low',
   });
   const analysis = normalizeAnalysis(data);
   setItem(id, { analysis: JSON.stringify(analysis), analysis_model: model, analyzed_at: now() });
@@ -290,13 +293,16 @@ async function runAnalysisStage(item: ItemRow) {
   log(id, `analyzed (${usage.input}+${usage.output} tokens) → ${analysis.category} / ${analysis.title}`);
 }
 
-/** Top existing tags (cached 5 min) injected into the prompt so the library converges on a shared vocabulary. */
-let _prefTags: { at: number; tags: string[] } | null = null;
-export function preferredTags(): string[] {
-  if (_prefTags && Date.now() - _prefTags.at < 5 * 60_000) return _prefTags.tags;
-  const rows = db().prepare("SELECT tag, COUNT(*) AS n FROM item_tags WHERE kind = 'ai' GROUP BY tag HAVING n >= 2 ORDER BY n DESC LIMIT 160").all() as Array<{ tag: string; n: number }>;
-  _prefTags = { at: Date.now(), tags: rows.map((r) => r.tag) };
-  return _prefTags.tags;
+/** Top existing tags of a tenant (cached 5 min) injected into the prompt so the library converges on a shared vocabulary. */
+const _prefTags = new Map<number, { at: number; tags: string[] }>();
+export function preferredTags(tid: number): string[] {
+  const cached = _prefTags.get(tid);
+  if (cached && Date.now() - cached.at < 5 * 60_000) return cached.tags;
+  const rows = db().prepare("SELECT t.tag, COUNT(*) AS n FROM item_tags t JOIN items i ON i.id = t.item_id WHERE i.tenant_id = ? AND t.kind = 'ai' GROUP BY t.tag HAVING n >= 2 ORDER BY n DESC LIMIT 160").all(tid) as Array<{ tag: string; n: number }>;
+  const tags = rows.map((r) => r.tag);
+  if (_prefTags.size > 1000) _prefTags.clear();
+  _prefTags.set(tid, { at: Date.now(), tags });
+  return tags;
 }
 
 export function normalizeAnalysis(a: Analysis): Analysis {
@@ -345,10 +351,10 @@ async function runEmbeddingStage(item: ItemRow) {
   const a = j<Analysis | null>(item.analysis, null);
   const text = embeddingText(item, a);
   if (!text.trim()) return;
-  const { vectors: [vec], tokens } = await embedTextsWithUsage([text]);
+  const { vectors: [vec], tokens } = await embedTextsWithUsage(item.tenant_id, [text]);
   setItem(item.id, { embedding: embeddingToBuffer(vec), embedding_model: currentEmbeddingTag() });
-  recordUsage(item.id, { embed: { model: models().embed, tokens } });
-  updateNeighborsFor(item.id, vec);
+  recordUsage(item.id, { embed: { model: models(item.tenant_id).embed, tokens } });
+  updateNeighborsFor(item.tenant_id, item.id, vec);
 }
 
 async function probeDurationSafe(file: string): Promise<number | null> {

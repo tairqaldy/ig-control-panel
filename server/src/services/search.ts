@@ -16,15 +16,16 @@ export function normalizeTag(raw: string): string {
   return t;
 }
 
-/** (Re)index an item in the FTS table. */
+/** (Re)index an item in the FTS table (the row carries its tenant_id so keyword search can be scoped). */
 export function indexItem(item: ItemRow) {
   const a = j<Analysis | null>(item.analysis, null);
   const d = db();
   d.prepare('DELETE FROM items_fts WHERE item_id = ?').run(item.id);
   const ents = a ? [...a.entities.people, ...a.entities.brands, ...a.entities.tools, ...a.entities.places, ...a.entities.books_media, ...a.entities.products].join(' ') : '';
   const userTags = j<string[]>(item.user_tags, []).join(' ');
-  d.prepare('INSERT INTO items_fts (item_id, title, summary, key_points, tags, caption, transcript, author, entities) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+  d.prepare('INSERT INTO items_fts (item_id, tenant_id, title, summary, key_points, tags, caption, transcript, author, entities) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
     item.id,
+    item.tenant_id ?? 1,
     a ? `${a.title} ${a.one_liner} ${a.subcategory} ${a.category}` : '',
     a ? `${a.summary} ${a.why_saved_guess} ${a.actionable_takeaways.join(' ')} ${a.on_screen_text}` : '',
     a ? a.key_points.join(' ') : '',
@@ -36,10 +37,12 @@ export function indexItem(item: ItemRow) {
   );
 }
 
-export function reindexAll(): number {
+/** Rebuild the FTS index for one tenant, or for everything when `tid` is omitted (migrations). */
+export function reindexAll(tid?: number): number {
   const d = db();
-  const rows = d.prepare('SELECT * FROM items').all() as ItemRow[];
-  d.exec('DELETE FROM items_fts');
+  const rows = (tid === undefined ? d.prepare('SELECT * FROM items').all() : d.prepare('SELECT * FROM items WHERE tenant_id = ?').all(tid)) as ItemRow[];
+  if (tid === undefined) d.exec('DELETE FROM items_fts');
+  else d.prepare('DELETE FROM items_fts WHERE tenant_id = ?').run(tid);
   const tx = d.transaction(() => { for (const r of rows) indexItem(r); });
   tx();
   return rows.length;
@@ -57,19 +60,20 @@ export function ftsQuery(q: string): string | null {
   return tokens.map((t) => `"${t.replace(/"/g, '')}"*`).join(' AND ');
 }
 
-/** Keyword search → ranked item ids with bm25 score (lower is better in sqlite; we invert). */
-export function keywordSearch(q: string, limit = 50): Array<{ id: string; score: number }> {
+/** Keyword search → ranked item ids with bm25 score (lower is better in sqlite; we invert). Scoped to one tenant. */
+export function keywordSearch(tid: number, q: string, limit = 50): Array<{ id: string; score: number }> {
   const match = ftsQuery(q);
   if (!match) return [];
   try {
+    // column weights: item_id, tenant_id (unindexed), title, summary, key_points, tags, caption, transcript, author, entities
     const rows = db()
-      .prepare(`SELECT item_id AS id, bm25(items_fts, 0, 10.0, 4.0, 5.0, 6.0, 1.5, 1.0, 3.0, 4.0) AS rank FROM items_fts WHERE items_fts MATCH ? ORDER BY rank LIMIT ?`)
-      .all(match, limit) as Array<{ id: string; rank: number }>;
+      .prepare(`SELECT item_id AS id, bm25(items_fts, 0, 0, 10.0, 4.0, 5.0, 6.0, 1.5, 1.0, 3.0, 4.0) AS rank FROM items_fts WHERE items_fts MATCH ? AND tenant_id = ? ORDER BY rank LIMIT ?`)
+      .all(match, tid, limit) as Array<{ id: string; rank: number }>;
     return rows.map((r) => ({ id: r.id, score: -r.rank }));
   } catch {
     // fallback: LIKE over caption/title
     const like = `%${q.toLowerCase()}%`;
-    const rows = db().prepare(`SELECT id FROM items WHERE lower(coalesce(caption,'')) LIKE ? OR lower(coalesce(analysis,'')) LIKE ? LIMIT ?`).all(like, like, limit) as Array<{ id: string }>;
+    const rows = db().prepare(`SELECT id FROM items WHERE tenant_id = ? AND (lower(coalesce(caption,'')) LIKE ? OR lower(coalesce(analysis,'')) LIKE ?) LIMIT ?`).all(tid, like, like, limit) as Array<{ id: string }>;
     return rows.map((r, i) => ({ id: r.id, score: limit - i }));
   }
 }

@@ -1,0 +1,263 @@
+/**
+ * Plans, limits and quotas (hosted mode). In single-tenant mode tenant 1 is on the 'owner' plan (unlimited),
+ * so nothing here ever blocks the open-source app.
+ */
+import type { Context } from 'hono';
+import { config } from '../config.js';
+import { db, now } from '../db.js';
+import type { PlanId, TenantRow } from '../types.js';
+
+export type { PlanId };
+
+export interface Limits {
+  analyzeTotal: number;
+  analyzePerMonth: number;
+  askPerMonth: number;
+  askPerMinute: number;
+  rules: number;
+  sendsPerMonth: number;
+  harvestsPerDay: number;
+  graphNodes: number;
+  concurrency: number;
+}
+
+export const PLANS: Record<PlanId, Limits> = {
+  owner:  { analyzeTotal: Infinity, analyzePerMonth: Infinity, askPerMonth: Infinity, askPerMinute: 30, rules: Infinity, sendsPerMonth: Infinity, harvestsPerDay: Infinity, graphNodes: 6000, concurrency: 4 },
+  trial:  { analyzeTotal: 100,   analyzePerMonth: 100,  askPerMonth: 20,   askPerMinute: 4,  rules: 1,        sendsPerMonth: 100,   harvestsPerDay: 3,  graphNodes: 300,  concurrency: 1 },
+  free:   { analyzeTotal: 100,   analyzePerMonth: 0,    askPerMonth: 5,    askPerMinute: 2,  rules: 1,        sendsPerMonth: 0,     harvestsPerDay: 1,  graphNodes: 300,  concurrency: 1 }, // after trial expiry: browse + export only
+  pro:    { analyzeTotal: 2000,  analyzePerMonth: 300,  askPerMonth: 300,  askPerMinute: 8,  rules: 10,       sendsPerMonth: 5000,  harvestsPerDay: 20, graphNodes: 3000, concurrency: 2 },
+  studio: { analyzeTotal: 10000, analyzePerMonth: 2000, askPerMonth: 1500, askPerMinute: 15, rules: Infinity, sendsPerMonth: 25000, harvestsPerDay: 50, graphNodes: 6000, concurrency: 4 },
+};
+
+/** Public price list (USD). */
+export const PRICES = {
+  pro: { month: 12, year: 99 },
+  studio: { month: 34, year: 290 },
+} as const;
+
+export const PLAN_NAMES: Record<PlanId, string> = { owner: 'Owner', trial: 'Trial', free: 'Free', pro: 'Pro', studio: 'Studio' };
+
+/** Fair-scheduling weights for the analysis worker (studio 3 : pro 2 : trial 1). */
+export const PLAN_WEIGHTS: Record<PlanId, number> = { owner: 3, studio: 3, pro: 2, trial: 1, free: 0 };
+
+const GRACE_SECONDS = 7 * 86400;
+
+/* ---------------- tenants ---------------- */
+
+export function getTenant(tid: number): TenantRow | undefined {
+  return db().prepare('SELECT * FROM tenants WHERE id = ?').get(tid) as TenantRow | undefined;
+}
+
+export function updateTenant(tid: number, patch: Partial<Omit<TenantRow, 'id' | 'created_at'>>) {
+  const keys = Object.keys(patch) as Array<keyof typeof patch>;
+  if (!keys.length) return;
+  const sets = keys.map((k) => `${k} = @${k}`).join(', ');
+  db().prepare(`UPDATE tenants SET ${sets}, updated_at = @__now WHERE id = @__id`).run({ ...patch, __now: now(), __id: tid });
+}
+
+/**
+ * The plan that actually applies right now: 'trial' becomes 'free' after trial_ends_at; a paid plan whose subscription is
+ * past_due/paused/canceled keeps working for a 7-day grace period after the last paid period, then becomes 'free'.
+ */
+export function effectivePlan(t: TenantRow | undefined, nowSec = now()): PlanId {
+  if (!t || t.deleted_at) return 'free';
+  if (t.plan === 'owner') return 'owner';
+  if (t.plan === 'trial') return t.trial_ends_at !== null && t.trial_ends_at < nowSec ? 'free' : 'trial';
+  if (t.plan === 'pro' || t.plan === 'studio') {
+    if (t.plan_status === 'past_due' || t.plan_status === 'paused' || t.plan_status === 'canceled') {
+      const until = (t.plan_renews_at || t.plan_started_at || 0) + GRACE_SECONDS;
+      if (nowSec > until) return 'free';
+    }
+    return t.plan;
+  }
+  return 'free';
+}
+
+export function effectivePlanFor(tid: number): PlanId {
+  return effectivePlan(getTenant(tid));
+}
+
+export function limitsFor(tid: number): Limits {
+  return PLANS[effectivePlanFor(tid)];
+}
+
+/* ---------------- usage ---------------- */
+
+export type Metric = 'analyze' | 'ask' | 'sends' | 'harvests' | 'rules';
+
+const monthKey = (d = new Date()) => d.toISOString().slice(0, 7);
+const dayKey = (d = new Date()) => d.toISOString().slice(0, 10);
+function nextMonthStart(): number { const d = new Date(); return Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) / 1000); }
+function nextDayStart(): number { const d = new Date(); return Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1) / 1000); }
+
+export function usageCount(tid: number, metric: Metric, period: string): number {
+  const r = db().prepare('SELECT count FROM usage WHERE tenant_id = ? AND period = ? AND metric = ?').get(tid, period, metric) as { count: number } | undefined;
+  return r?.count || 0;
+}
+
+/** Record consumption. `analyze` counts against both the lifetime total and the current month. */
+export function bumpUsage(tid: number, metric: Metric, n = 1) {
+  if (n <= 0) return;
+  const periods = metric === 'analyze' ? ['total', monthKey()] : metric === 'harvests' ? [dayKey()] : [monthKey()];
+  const stmt = db().prepare('INSERT INTO usage (tenant_id, period, metric, count) VALUES (?, ?, ?, ?) ON CONFLICT(tenant_id, period, metric) DO UPDATE SET count = count + excluded.count');
+  for (const p of periods) stmt.run(tid, p, metric, n);
+  if (metric === 'ask') noteAsk(tid, n);
+}
+
+/** Per-minute sliding window for Ask (in memory; a restart just forgets the last minute). */
+const askWindow = new Map<number, number[]>();
+function noteAsk(tid: number, n = 1) {
+  const t = Date.now();
+  const arr = (askWindow.get(tid) || []).filter((x) => t - x < 60_000);
+  for (let i = 0; i < n; i++) arr.push(t);
+  askWindow.set(tid, arr);
+  if (askWindow.size > 5000) for (const [k, v] of askWindow) if (!v.length || t - v[v.length - 1] > 60_000) askWindow.delete(k);
+}
+function asksLastMinute(tid: number): number {
+  const t = Date.now();
+  const arr = (askWindow.get(tid) || []).filter((x) => t - x < 60_000);
+  askWindow.set(tid, arr);
+  return arr.length;
+}
+
+export interface QuotaCheck {
+  ok: boolean;
+  metric: Metric;
+  plan: PlanId;
+  used: number;
+  limit: number; // Infinity = unlimited
+  remaining: number;
+  resetsAt: number | null; // epoch seconds, null = never
+  /** which sub-limit is binding for the composite metrics (analyze: total|month; ask: month|minute) */
+  window?: 'total' | 'month' | 'day' | 'minute';
+}
+
+/**
+ * Can this tenant consume `n` more units of `metric` right now?
+ * analyze: lifetime total AND calendar month; ask: month AND per-minute; sends: month; harvests: day; rules: live row count.
+ */
+export function checkQuota(tid: number, metric: Metric, n = 1): QuotaCheck {
+  const plan = effectivePlanFor(tid);
+  const lim = PLANS[plan];
+  const mk = (used: number, limit: number, resetsAt: number | null, window: QuotaCheck['window']): QuotaCheck => {
+    const remaining = limit === Infinity ? Infinity : Math.max(0, limit - used);
+    return { ok: remaining >= n, metric, plan, used, limit, remaining, resetsAt, window };
+  };
+  switch (metric) {
+    case 'analyze': {
+      const total = mk(usageCount(tid, 'analyze', 'total'), lim.analyzeTotal, null, 'total');
+      const month = mk(usageCount(tid, 'analyze', monthKey()), lim.analyzePerMonth, nextMonthStart(), 'month');
+      return month.remaining < total.remaining ? month : total;
+    }
+    case 'ask': {
+      const month = mk(usageCount(tid, 'ask', monthKey()), lim.askPerMonth, nextMonthStart(), 'month');
+      if (!month.ok) return month;
+      const minute = mk(asksLastMinute(tid), lim.askPerMinute, Math.floor(Date.now() / 1000) + 60, 'minute');
+      return minute.ok ? month : minute;
+    }
+    case 'sends': return mk(usageCount(tid, 'sends', monthKey()), lim.sendsPerMonth, nextMonthStart(), 'month');
+    case 'harvests': return mk(usageCount(tid, 'harvests', dayKey()), lim.harvestsPerDay, nextDayStart(), 'day');
+    case 'rules': {
+      const used = (db().prepare('SELECT COUNT(*) AS n FROM automation_rules WHERE tenant_id = ?').get(tid) as any).n as number;
+      return mk(used, lim.rules, null, 'total');
+    }
+  }
+}
+
+/** Human message for a 402. */
+export function quotaMessage(q: QuotaCheck): string {
+  const planName = q.plan === 'trial' ? 'your trial' : q.plan === 'free' ? 'the free tier' : `your ${PLAN_NAMES[q.plan]} plan`;
+  const lim = q.limit === Infinity ? 'unlimited' : String(q.limit);
+  switch (q.metric) {
+    case 'analyze':
+      if (q.plan === 'free') return 'Your trial has ended — analysis is paused. Upgrade to keep analyzing your saves (browsing and export keep working).';
+      return q.window === 'month' ? `You've analyzed ${q.used} of ${lim} saves this month on ${planName}.` : `You've used all ${lim} analyzed saves included in ${planName}.`;
+    case 'ask':
+      return q.window === 'minute' ? `Slow down a little — ${lim} questions per minute on ${planName}.` : `You've used all ${lim} questions of ${planName} this month.`;
+    case 'sends': return q.plan === 'free' ? 'Automations are paused after the trial. Upgrade to keep replying automatically.' : `You've sent ${q.used} of ${lim} automated replies this month on ${planName}.`;
+    case 'harvests': return `You've imported ${q.used} of ${lim} times today on ${planName}. Try again tomorrow or upgrade.`;
+    case 'rules': return `${planName[0].toUpperCase()}${planName.slice(1)} includes ${lim} automation rule${q.limit === 1 ? '' : 's'}. Upgrade to add more.`;
+  }
+}
+
+/** HTTP 402 payload for the web's upgrade modal. */
+export function quotaResponse(c: Context, q: QuotaCheck) {
+  return c.json({ error: quotaMessage(q), code: 'quota', metric: q.metric, window: q.window ?? null, used: q.used, limit: finite(q.limit), remaining: finite(q.remaining), resetsAt: q.resetsAt, plan: q.plan, upgrade: true }, 402);
+}
+
+/** JSON can't carry Infinity: unlimited limits are serialized as null. */
+export function finite(n: number): number | null { return Number.isFinite(n) ? n : null; }
+function jsonLimits(l: Limits): Record<keyof Limits, number | null> {
+  const out = {} as Record<keyof Limits, number | null>;
+  for (const k of Object.keys(l) as Array<keyof Limits>) out[k] = finite(l[k]);
+  return out;
+}
+
+/* ---------------- payloads ---------------- */
+
+export function paddlePublic() {
+  return { env: config.paddle.env, clientToken: config.paddle.clientToken || null, prices: { ...config.paddle.prices } };
+}
+
+/** `GET /api/plan` */
+export function planPayload(tid: number) {
+  const t = getTenant(tid);
+  const plan: PlanId = t?.plan || 'free';
+  const eff = effectivePlan(t);
+  const lim = PLANS[eff];
+  const meter = (used: number, limit: number) => ({ used, limit: finite(limit) });
+  const analyzeTotal = usageCount(tid, 'analyze', 'total');
+  const analyzeMonth = usageCount(tid, 'analyze', monthKey());
+  const rules = (db().prepare('SELECT COUNT(*) AS n FROM automation_rules WHERE tenant_id = ?').get(tid) as any).n as number;
+  return {
+    tenantId: tid,
+    plan,
+    effectivePlan: eff,
+    planName: PLAN_NAMES[eff],
+    status: t?.plan_status || 'active',
+    trialEndsAt: t?.trial_ends_at ?? null,
+    trialDaysLeft: t?.plan === 'trial' && t.trial_ends_at ? Math.max(0, Math.ceil((t.trial_ends_at - now()) / 86400)) : null,
+    renewsAt: t?.plan_renews_at ?? null,
+    cancelledAt: t?.cancelled_at ?? null,
+    limits: jsonLimits(lim),
+    usage: {
+      analyze: meter(analyzeTotal, lim.analyzeTotal),
+      analyzeMonth: meter(analyzeMonth, lim.analyzePerMonth),
+      ask: meter(usageCount(tid, 'ask', monthKey()), lim.askPerMonth),
+      sends: meter(usageCount(tid, 'sends', monthKey()), lim.sendsPerMonth),
+      rules: meter(rules, lim.rules),
+      harvests: meter(usageCount(tid, 'harvests', dayKey()), lim.harvestsPerDay),
+    },
+    resets: { month: nextMonthStart(), day: nextDayStart() },
+    paddle: { ...paddlePublic(), customData: { tenant_id: tid } },
+    canManage: !!(t?.paddle_customer_id && config.paddle.apiKey),
+    hosted: config.hosted,
+  };
+}
+
+/** `GET /api/plans` — public catalog for the landing/pricing page. */
+export function planCatalog() {
+  const p = config.paddle.prices;
+  return {
+    currency: 'USD',
+    trialDays: config.trialDays,
+    hosted: config.hosted,
+    signupsEnabled: config.signupsEnabled,
+    paddle: { env: config.paddle.env, clientToken: config.paddle.clientToken || null },
+    plans: [
+      { id: 'trial', name: 'Trial', tagline: `${config.trialDays} days free`, priceMonth: 0, priceYear: 0, priceIds: { month: null, year: null }, limits: jsonLimits(PLANS.trial) },
+      { id: 'pro', name: 'Pro', tagline: 'For serious savers', priceMonth: PRICES.pro.month, priceYear: PRICES.pro.year, priceIds: { month: p.proMonth || null, year: p.proYear || null }, limits: jsonLimits(PLANS.pro) },
+      { id: 'studio', name: 'Studio', tagline: 'For creators and teams of one', priceMonth: PRICES.studio.month, priceYear: PRICES.studio.year, priceIds: { month: p.studioMonth || null, year: p.studioYear || null }, limits: jsonLimits(PLANS.studio) },
+      { id: 'free', name: 'Free', tagline: 'After the trial: browse and export', priceMonth: 0, priceYear: 0, priceIds: { month: null, year: null }, limits: jsonLimits(PLANS.free) },
+    ],
+  };
+}
+
+/** Map a Paddle price id to a plan (from env). */
+export function planForPriceId(priceId: string | null | undefined): 'pro' | 'studio' | null {
+  if (!priceId) return null;
+  const p = config.paddle.prices;
+  if (priceId === p.proMonth || priceId === p.proYear) return 'pro';
+  if (priceId === p.studioMonth || priceId === p.studioYear) return 'studio';
+  return null;
+}

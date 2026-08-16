@@ -3,9 +3,10 @@
 </p>
 <h1 align="center">Resurfly</h1>
 <p align="center"><b>Turn your Instagram Saves graveyard into structured, searchable, talkable inspiration.</b><br/>
-Self-hosted · single user · open source (MIT) · one Docker container</p>
+Open source (MIT) · one Docker container · <a href="https://resurfly.com">resurfly.com</a> if you'd rather not host it</p>
 
 <p align="center">
+  <a href="https://resurfly.com">Hosted (3-day trial)</a> ·
   <a href="#quick-start-railway-10-minutes">Deploy on Railway</a> ·
   <a href="#run-it-locally">Run locally</a> ·
   <a href="docs/HARVESTER.md">Harvester</a> ·
@@ -28,7 +29,19 @@ You saved 4,000 reels "for later". Later never came. Resurfly digs them all up a
 - **Instagram DM automations ("ManyChat-lite")** — keyword auto-replies, comment→DM funnels and story-reply responders on Meta's official Instagram Messaging API. Rules, dry-run tester, activity log. No monthly bot platform.
 - **Three ways to import** — the browser **harvester** (richest: captions, stats, media → transcripts & frames), the official **Instagram data export** ZIP, or **paste URLs**. Re-imports merge; nothing is duplicated.
 
-> Built as a control center for one Instagram account. It is deliberately not multi-tenant.
+## Self-host it, or let us run it
+
+Same code, two ways to use it — the n8n model:
+
+| | **Self-hosted** (this repo) | **Hosted** ([resurfly.com](https://resurfly.com)) |
+|---|---|---|
+| Price | Free (MIT). You pay Railway ~$5/mo + your own OpenAI usage (≈ $7.5 per 1,000 saves once). | 3-day trial, then **Pro $12/mo** or **Studio $34/mo** ([pricing](https://resurfly.com/pricing)). OpenAI is included. |
+| Setup | ~10 minutes: Railway + a volume + an OpenAI key. | Sign up, run the harvester, done. |
+| Who's it for | You like owning your data and your bill. | You want the result today and don't want to babysit a server. |
+| Data | Your volume, your key, nothing leaves your box except the OpenAI calls. | Deleted 30 days after you cancel. Same privacy notes as [docs/PRIVACY.md](docs/PRIVACY.md). |
+| Automations | Bring your own Meta app (guide included). | Same for now. |
+
+The hosted version runs this exact repository with `HOSTED=true` (multi-tenant mode: sign-up, plans, quotas, Paddle billing). Everything else — the harvester, the analysis, the graph — is identical. Costs and margins are published in [docs/BUSINESS.md](docs/BUSINESS.md); we'd rather you know what a reel costs to analyze than guess.
 
 ## How it works (30-second version)
 

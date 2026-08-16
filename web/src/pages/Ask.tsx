@@ -5,7 +5,8 @@ import { toast } from 'sonner';
 import { Send, Sparkles, Trash2, Square, MessageSquareText, Copy, FileText } from 'lucide-react';
 import { ssePost } from '../lib/api';
 import type { AskSource } from '../lib/types';
-import { useItemModal, useAuth } from '../lib/store';
+import { useItemModal, useAuth, useQuota } from '../lib/store';
+import { fmtLimit, isUnlimited, meterFull, planName } from '../lib/plans';
 import { PageHeader } from '../components/ui';
 import { cn, copyText } from '../lib/utils';
 
@@ -104,12 +105,16 @@ export default function Ask() {
   const [sp, setSp] = useSearchParams();
   const modal = useItemModal();
   const auth = useAuth();
+  const { plan, openUpgrade, refreshPlan } = useQuota();
   const [turns, setTurns] = useState<Turn[]>(() => { try { return JSON.parse(sessionStorage.getItem(STORAGE) || '[]'); } catch { return []; } });
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const openaiOff = auth.setupIssues.some((s) => s.includes('OPENAI'));
+  // Hosted quota meter (questions this month). The server is the source of truth (402 → global modal); this only saves a round-trip.
+  const askMeter = plan && plan.plan !== 'owner' ? plan.usage?.ask : undefined;
+  const askBlocked = !!plan && plan.plan !== 'owner' && (plan.effectivePlan === 'free' || meterFull(askMeter));
 
   useEffect(() => { sessionStorage.setItem(STORAGE, JSON.stringify(turns.map((t) => ({ ...t, streaming: false })))); }, [turns]);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [turns.length, turns[turns.length - 1]?.content.length]);
@@ -125,6 +130,7 @@ export default function Ask() {
     setInput('');
     const local = localAnswer(qn);
     if (local) { setTurns((t) => [...t, { role: 'user', content: qn }, { role: 'assistant', content: local, sources: [] }]); return; }
+    if (askBlocked) { openUpgrade({ quota: { error: 'Question allowance used', code: 'quota', metric: 'ask', used: askMeter?.used ?? 0, limit: askMeter?.limit ?? 0, plan: plan!.effectivePlan, upgrade: true } }); return; }
     const history = turns.filter((t) => !t.error).slice(-6).map((t) => ({ role: t.role, content: t.content }));
     setTurns((t) => [...t, { role: 'user', content: qn }, { role: 'assistant', content: '', streaming: true, sources: [] }]);
     setBusy(true);
@@ -152,6 +158,7 @@ export default function Ask() {
       setBusy(false);
       abortRef.current = null;
       setTurns((t) => { const n = t.slice(); if (n.length) n[n.length - 1] = { ...n[n.length - 1], streaming: false }; return n; });
+      if (askMeter) void refreshPlan();
     }
   }
   const stop = () => abortRef.current?.abort();
@@ -220,6 +227,15 @@ export default function Ask() {
 
       {/* Composer */}
       <div className="sticky bottom-0 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 pt-3 pb-4 bg-gradient-to-t from-bg via-bg to-transparent">
+        {askMeter && (
+          <div className="mx-auto max-w-3xl mb-2 flex items-center justify-end gap-2 text-[11.5px]">
+            <button type="button" onClick={() => openUpgrade()} className={cn('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 transition-colors', askBlocked ? 'border-warn/50 bg-warn-soft text-warn' : 'border-line bg-surface text-muted hover:text-ink hover:border-line-2')} title="Questions this month on your plan">
+              <span className={cn('h-1.5 w-1.5 rounded-full', askBlocked ? 'bg-warn' : 'bg-accent')} />
+              {plan?.effectivePlan === 'free' ? `${planName(plan.plan)} · Ask is paused` : <>{askMeter.used.toLocaleString()} / {fmtLimit(askMeter.limit)} questions this month{!isUnlimited(askMeter.limit) && ` · ${planName(plan?.effectivePlan)}`}</>}
+              {askBlocked && <span className="font-medium">· Upgrade</span>}
+            </button>
+          </div>
+        )}
         <form onSubmit={(e) => { e.preventDefault(); ask(input); }} className="mx-auto max-w-3xl flex items-end gap-2 rounded-2xl border border-line bg-surface p-2" style={{ boxShadow: 'var(--shadow-lg)' }}>
           <MessageSquareText size={16} className="text-muted ml-2 mb-2.5" />
           <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(input); } }} rows={1} placeholder="Ask about anything you saved… (Enter to send, Shift+Enter for a new line)" className="flex-1 resize-none bg-transparent px-1 py-2 text-[14px] outline-none placeholder:text-muted-2 max-h-40" style={{ height: 'auto' }} onInput={(e) => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = `${Math.min(160, el.scrollHeight)}px`; }} />

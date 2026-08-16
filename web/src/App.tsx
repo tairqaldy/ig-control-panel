@@ -1,9 +1,10 @@
 import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router';
-import { AuthProvider, ItemModalProvider, PaletteProvider, ThemeProvider, useAuth } from './lib/store';
+import { AuthProvider, ItemModalProvider, PaletteProvider, QuotaProvider, ThemeProvider, useAuth } from './lib/store';
 import { Shell } from './components/Shell';
 import { ItemModal } from './components/ItemModal';
 import { CommandPalette } from './components/CommandPalette';
+import { UpgradeModal } from './components/UpgradeModal';
 import { Skeleton } from './components/ui';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -14,18 +15,39 @@ import Automations from './pages/Automations';
 import Settings from './pages/Settings';
 import Resurface from './pages/Resurface';
 const Graph = lazy(() => import('./pages/Graph'));
+// Hosted-only pages, lazy so the single-tenant bundle doesn't pay for them.
+const Landing = lazy(() => import('./pages/Landing'));
+const Pricing = lazy(() => import('./pages/Pricing'));
+const Signup = lazy(() => import('./pages/Signup'));
+const Billing = lazy(() => import('./pages/Billing'));
+
+function Loading() {
+  return (
+    <div className="h-full min-h-[50vh] grid place-items-center">
+      <div className="flex items-center gap-3 text-muted text-sm"><span className="h-2 w-2 rounded-full bg-accent pulse-dot" /> Loading…</div>
+    </div>
+  );
+}
 
 function Gate() {
   const auth = useAuth();
   const loc = useLocation();
-  if (auth.loading) {
+  if (auth.loading) return <Loading />;
+  if (!auth.authenticated) {
+    // Single-tenant: the login form everywhere (unchanged). Hosted: public marketing routes + login/signup.
+    if (!auth.hosted) return <Login />;
     return (
-      <div className="h-full grid place-items-center">
-        <div className="flex items-center gap-3 text-muted text-sm"><span className="h-2 w-2 rounded-full bg-accent pulse-dot" /> Loading…</div>
-      </div>
+      <Suspense fallback={<Loading />}>
+        <Routes location={loc}>
+          <Route path="/" element={<Landing />} />
+          <Route path="/pricing" element={<Pricing />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="*" element={<Navigate to="/login" replace state={{ from: loc.pathname }} />} />
+        </Routes>
+      </Suspense>
     );
   }
-  if (!auth.authenticated) return <Login />;
   return (
     <ItemModalProvider>
       <PaletteProvider>
@@ -39,12 +61,16 @@ function Gate() {
             <Route path="/import" element={<Import />} />
             <Route path="/automations" element={<Automations />} />
             <Route path="/settings" element={<Settings />} />
-            <Route path="/login" element={<Navigate to="/" replace />} />
+            {auth.hosted && <Route path="/billing" element={<Suspense fallback={<Skeleton className="h-[60vh] w-full rounded-2xl" />}><Billing /></Suspense>} />}
+            <Route path="/pricing" element={<Navigate to={auth.hosted ? '/billing' : '/'} replace />} />
+            <Route path="/login" element={<Navigate to={(loc.state as any)?.from && String((loc.state as any).from).startsWith('/') ? String((loc.state as any).from) : '/'} replace />} />
+            <Route path="/signup" element={<Navigate to="/" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Shell>
         <ItemModal />
         <CommandPalette />
+        {auth.hosted && <UpgradeModal />}
       </PaletteProvider>
     </ItemModalProvider>
   );
@@ -54,7 +80,9 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <Gate />
+        <QuotaProvider>
+          <Gate />
+        </QuotaProvider>
       </AuthProvider>
     </ThemeProvider>
   );

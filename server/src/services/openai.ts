@@ -2,35 +2,44 @@ import OpenAI, { toFile } from 'openai';
 import { config } from '../config.js';
 import { getSetting } from '../db.js';
 
-let _client: OpenAI | null = null;
-let _clientKey = '';
+/** One client per distinct key (env key shared by all tenants in hosted mode; self-hosters may set a key in Settings). */
+const clients = new Map<string, OpenAI>();
 
-export function apiKey(): string {
-  return config.openaiApiKey || getSetting('openai_api_key') || '';
+/** Effective key for a tenant: the server env key wins; otherwise the tenant's own key from Settings. */
+export function apiKey(tid: number): string {
+  return config.openaiApiKey || getSetting(tid, 'openai_api_key') || '';
 }
 
-export function hasOpenAI(): boolean {
-  return apiKey().length > 10;
+export function hasOpenAI(tid: number): boolean {
+  return apiKey(tid).length > 10;
 }
 
-export function openai(): OpenAI {
-  const key = apiKey();
+/** True when the key in use is the shared server key (so an OpenAI billing problem affects every tenant). */
+export function usesSharedKey(): boolean {
+  return !!config.openaiApiKey;
+}
+
+export function openai(tid: number): OpenAI {
+  const key = apiKey(tid);
   if (!key) throw new Error('OPENAI_API_KEY is not configured. Set it as an environment variable or in Settings.');
-  if (_client && _clientKey === key) return _client;
-  _client = new OpenAI({ apiKey: key, baseURL: config.openaiBaseUrl, maxRetries: 4, timeout: 180_000 });
-  _clientKey = key;
-  return _client;
+  let client = clients.get(key);
+  if (!client) {
+    if (clients.size > 50) clients.clear();
+    client = new OpenAI({ apiKey: key, baseURL: config.openaiBaseUrl, maxRetries: 4, timeout: 180_000 });
+    clients.set(key, client);
+  }
+  return client;
 }
 
-export function models() {
+export function models(tid: number) {
   // analysis model: explicit setting/env wins; otherwise the scope tier decides (standard → mini, economy → nano)
   let tier: string | null = null;
-  try { const s = getSetting('scope'); tier = s ? JSON.parse(s).tier || null : null; } catch {}
-  const explicit = getSetting('analysis_model') || process.env.OPENAI_MODEL || '';
+  try { const s = getSetting(tid, 'scope'); tier = s ? JSON.parse(s).tier || null : null; } catch {}
+  const explicit = getSetting(tid, 'analysis_model') || process.env.OPENAI_MODEL || '';
   return {
     analysis: explicit || (tier === 'economy' ? 'gpt-5.4-nano' : config.analysisModel),
-    ask: getSetting('ask_model') || config.askModel,
-    transcribe: getSetting('transcribe_model') || config.transcribeModel,
+    ask: getSetting(tid, 'ask_model') || config.askModel,
+    transcribe: getSetting(tid, 'transcribe_model') || config.transcribeModel,
     embed: config.embedModel,
   };
 }
@@ -51,6 +60,7 @@ export function reasoningParams(model: string, effort: 'none' | 'minimal' | 'low
  * `images` are data: URLs or https URLs.
  */
 export async function generateStructured<T>(opts: {
+  tid: number;
   model: string;
   system: string;
   user: string;
@@ -60,7 +70,7 @@ export async function generateStructured<T>(opts: {
   maxOutputTokens?: number;
   effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
 }): Promise<{ data: T; usage: { input: number; output: number } }> {
-  const client = openai();
+  const client = openai(opts.tid);
   const content: any[] = [{ type: 'input_text', text: opts.user }];
   for (const img of opts.images || []) content.push({ type: 'input_image', image_url: img, detail: 'low' });
 
@@ -107,13 +117,14 @@ function findRefusal(res: any): string | null {
 
 /** Streaming plain-text generation (for Ask). Yields text deltas. */
 export async function* streamText(opts: {
+  tid: number;
   model: string;
   system: string;
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
   effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
   maxOutputTokens?: number;
 }): AsyncGenerator<string, void, unknown> {
-  const client = openai();
+  const client = openai(opts.tid);
   const stream: any = await client.responses.create({
     model: opts.model,
     instructions: opts.system,
@@ -129,9 +140,9 @@ export async function* streamText(opts: {
   }
 }
 
-export async function transcribeFile(buf: Buffer, filename: string, opts?: { language?: string; prompt?: string }): Promise<{ text: string; language?: string }> {
-  const client = openai();
-  const model = models().transcribe;
+export async function transcribeFile(tid: number, buf: Buffer, filename: string, opts?: { language?: string; prompt?: string }): Promise<{ text: string; language?: string }> {
+  const client = openai(tid);
+  const model = models(tid).transcribe;
   const file = await toFile(buf, filename);
   const params: any = { file, model, response_format: 'json' };
   if (opts?.prompt) params.prompt = opts.prompt;
@@ -141,13 +152,13 @@ export async function transcribeFile(buf: Buffer, filename: string, opts?: { lan
   return { text: (text || '').trim(), language: res?.language };
 }
 
-export async function embedTexts(texts: string[]): Promise<Float32Array[]> {
-  return (await embedTextsWithUsage(texts)).vectors;
+export async function embedTexts(tid: number, texts: string[]): Promise<Float32Array[]> {
+  return (await embedTextsWithUsage(tid, texts)).vectors;
 }
-export async function embedTextsWithUsage(texts: string[]): Promise<{ vectors: Float32Array[]; tokens: number }> {
+export async function embedTextsWithUsage(tid: number, texts: string[]): Promise<{ vectors: Float32Array[]; tokens: number }> {
   if (!texts.length) return { vectors: [], tokens: 0 };
-  const client = openai();
-  const res = await client.embeddings.create({ model: models().embed, input: texts, dimensions: config.embedDims });
+  const client = openai(tid);
+  const res = await client.embeddings.create({ model: models(tid).embed, input: texts, dimensions: config.embedDims });
   return { vectors: res.data.sort((a, b) => a.index - b.index).map((d) => Float32Array.from(d.embedding)), tokens: res.usage?.total_tokens ?? 0 };
 }
 
@@ -175,10 +186,10 @@ export function cosine(a: Float32Array, b: Float32Array): number {
 }
 
 /** Test the configured key/models with a tiny call. */
-export async function testOpenAI(): Promise<{ ok: boolean; message: string; model: string }> {
-  const m = models().analysis;
+export async function testOpenAI(tid: number): Promise<{ ok: boolean; message: string; model: string }> {
+  const m = models(tid).analysis;
   try {
-    const client = openai();
+    const client = openai(tid);
     const res: any = await client.responses.create({ model: m, input: 'Reply with the single word OK.', max_output_tokens: 16, ...(reasoningParams(m, 'low') as any) } as any);
     const out = (res.output_text || '').trim();
     return { ok: true, message: `Model ${m} responded: ${out.slice(0, 40)}`, model: m };

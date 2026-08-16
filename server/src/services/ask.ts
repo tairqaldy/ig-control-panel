@@ -32,15 +32,15 @@ function rrf(lists: Array<Array<{ id: string; score: number }>>, k = 60): Map<st
   return out;
 }
 
-export async function retrieve(question: string, limit = 12): Promise<AskSource[]> {
+export async function retrieve(tid: number, question: string, limit = 12): Promise<AskSource[]> {
   const [sem, kw] = await Promise.all([
-    semanticSearch(question, 40).catch(() => [] as Array<{ id: string; score: number }>),
-    Promise.resolve(keywordSearch(question, 25)),
+    semanticSearch(tid, question, 40).catch(() => [] as Array<{ id: string; score: number }>),
+    Promise.resolve(keywordSearch(tid, question, 25)),
   ]);
   const fused = rrf([sem, kw]);
   const ids = Array.from(fused.entries()).sort((a, b) => b[1] - a[1]).slice(0, limit).map(([id]) => id);
   if (!ids.length) return [];
-  const rows = db().prepare(`SELECT * FROM items WHERE id IN (${ids.map(() => '?').join(',')}) AND archived = 0 AND excluded = 0`).all(...ids) as ItemRow[];
+  const rows = db().prepare(`SELECT * FROM items WHERE tenant_id = ? AND id IN (${ids.map(() => '?').join(',')}) AND archived = 0 AND excluded = 0`).all(tid, ...ids) as ItemRow[];
   const byId = new Map(rows.map((r) => [r.id, r]));
   return ids.filter((id) => byId.has(id)).map((id) => {
     const r = byId.get(id)!;
@@ -59,11 +59,12 @@ export async function retrieve(question: string, limit = 12): Promise<AskSource[
   });
 }
 
-export function buildContext(sources: AskSource[]): string {
+export function buildContext(tid: number, sources: AskSource[]): string {
   const d = db();
   const parts: string[] = [];
   for (const s of sources) {
-    const r = d.prepare('SELECT * FROM items WHERE id = ?').get(s.id) as ItemRow;
+    const r = d.prepare('SELECT * FROM items WHERE id = ? AND tenant_id = ?').get(s.id, tid) as ItemRow | undefined;
+    if (!r) continue;
     const a = j<Analysis | null>(r.analysis, null);
     const lines = [`[#${s.id}] ${s.title}${r.author_username ? ` — @${r.author_username}` : ''} (${r.media_type}${a ? `, ${a.category}` : ''})`];
     if (a) {
@@ -83,10 +84,10 @@ export function buildContext(sources: AskSource[]): string {
   return parts.join('\n\n');
 }
 
-export async function* askStream(question: string, history: Array<{ role: 'user' | 'assistant'; content: string }>, sources: AskSource[]): AsyncGenerator<string> {
-  const context = buildContext(sources);
-  const total = (db().prepare("SELECT COUNT(*) AS n FROM items WHERE analysis_status = 'done' AND archived = 0 AND excluded = 0").get() as any).n;
+export async function* askStream(tid: number, question: string, history: Array<{ role: 'user' | 'assistant'; content: string }>, sources: AskSource[]): AsyncGenerator<string> {
+  const context = buildContext(tid, sources);
+  const total = (db().prepare("SELECT COUNT(*) AS n FROM items WHERE tenant_id = ? AND analysis_status = 'done' AND archived = 0 AND excluded = 0").get(tid) as any).n;
   const userMsg = `## Library context (${sources.length} most relevant of ${total} analyzed saves)\n\n${context || '(nothing relevant found)'}\n\n## Question\n${question}`;
   const messages = [...history.slice(-6), { role: 'user' as const, content: userMsg }];
-  yield* streamText({ model: models().ask, system: ASK_SYSTEM, messages, effort: 'low', maxOutputTokens: 1800 });
+  yield* streamText({ tid, model: models(tid).ask, system: ASK_SYSTEM, messages, effort: 'low', maxOutputTokens: 1800 });
 }

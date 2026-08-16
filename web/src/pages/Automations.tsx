@@ -5,7 +5,10 @@ import { toast } from 'sonner';
 import { Bot, Plus, Trash2, Pencil, Play, CheckCircle2, XCircle, MessageCircle, MessageSquare, Copy, RefreshCw, ExternalLink, FlaskConical, ArrowRight, Zap } from 'lucide-react';
 import { api } from '../lib/api';
 import type { Rule } from '../lib/types';
+import { useQuota } from '../lib/store';
+import { meterFull } from '../lib/plans';
 import { PageHeader, Modal, Field, Toggle, Tabs, Empty } from '../components/ui';
+import { UsageBar } from '../components/Pricing';
 import { cn, copyText, fmtAgo } from '../lib/utils';
 
 const TRIGGERS: Array<{ id: Rule['trigger_type']; label: string; desc: string }> = [
@@ -23,8 +26,9 @@ function RuleEditor({ rule, onClose }: { rule: (Partial<Rule> & { keywordsText?:
   const [f, setF] = useState<any>(() => rule ? { ...rule, keywordsText: rule.keywordsText ?? (rule.keywords ? JSON.parse(rule.keywords).join(', ') : '') } : { ...EMPTY });
   const save = useMutation({
     mutationFn: () => { const body = { ...f, keywords: f.keywordsText.split(',').map((s: string) => s.trim()).filter(Boolean), enabled: !!f.enabled }; return f.id ? api.put(`/api/automations/rules/${f.id}`, body) : api.post('/api/automations/rules', body); },
-    onSuccess: () => { toast.success('Rule saved'); qc.invalidateQueries({ queryKey: ['rules'] }); qc.invalidateQueries({ queryKey: ['auto-status'] }); onClose(); },
-    onError: (e: any) => toast.error(e.message),
+    onSuccess: () => { toast.success('Rule saved'); qc.invalidateQueries({ queryKey: ['rules'] }); qc.invalidateQueries({ queryKey: ['auto-status'] }); qc.invalidateQueries({ queryKey: ['plan'] }); onClose(); },
+    // 402 (rule limit) → api.ts already opened the upgrade modal; keep the editor open so nothing typed is lost.
+    onError: (e: any) => { if (e?.status !== 402) toast.error(e.message); },
   });
   const set = (k: string, v: any) => setF((s: any) => ({ ...s, [k]: v }));
   const isComment = f.trigger_type?.startsWith('comment');
@@ -77,7 +81,11 @@ export default function Automations() {
   const [testKind, setTestKind] = useState<'dm' | 'comment' | 'story_reply'>('comment');
   const [testText, setTestText] = useState('');
   const [testResult, setTestResult] = useState<any>(null);
-  const del = useMutation({ mutationFn: (id: number) => api.del(`/api/automations/rules/${id}`), onSuccess: () => { qc.invalidateQueries({ queryKey: ['rules'] }); toast.success('Deleted'); } });
+  const { plan, openUpgrade } = useQuota();
+  const metered = !!plan && plan.plan !== 'owner';
+  const rulesFull = metered && meterFull(plan!.usage?.rules);
+  const newRule = (preset: any) => { if (rulesFull) openUpgrade({ quota: { error: 'Rule limit reached', code: 'quota', metric: 'rules', used: plan!.usage.rules.used, limit: plan!.usage.rules.limit, plan: plan!.effectivePlan, upgrade: true } }); else setEditing(preset); };
+  const del = useMutation({ mutationFn: (id: number) => api.del(`/api/automations/rules/${id}`), onSuccess: () => { qc.invalidateQueries({ queryKey: ['rules'] }); qc.invalidateQueries({ queryKey: ['plan'] }); toast.success('Deleted'); } });
   const toggle = useMutation({ mutationFn: (r: Rule) => api.put(`/api/automations/rules/${r.id}`, { enabled: !r.enabled }), onSuccess: () => qc.invalidateQueries({ queryKey: ['rules'] }) });
   const test = useMutation({ mutationFn: () => api.post<any>('/api/automations/test', { kind: testKind, text: testText }), onSuccess: setTestResult });
   const whoami = useMutation({ mutationFn: () => api.post<any>('/api/automations/whoami'), onSuccess: (r) => (r.ok ? toast.success(`Connected as @${r.me?.username || r.me?.user_id}`) : toast.error(r.message)) });
@@ -85,7 +93,7 @@ export default function Automations() {
 
   return (
     <div>
-      <PageHeader eyebrow="Automations · ManyChat-lite" title={<>Instagram DM <em className="text-accent not-italic">autopilot</em></>} subtitle="Keyword auto-replies, comment-to-DM funnels and story-reply responders on Meta’s official Instagram Messaging API. Runs inside this app — no third-party bot platform, no monthly fee." actions={<button onClick={() => setEditing({ ...EMPTY })} className="btn btn-primary"><Plus size={14} /> New rule</button>} />
+      <PageHeader eyebrow="Automations · ManyChat-lite" title={<>Instagram DM <em className="text-accent not-italic">autopilot</em></>} subtitle="Keyword auto-replies, comment-to-DM funnels and story-reply responders on Meta’s official Instagram Messaging API. Runs inside this app — no third-party bot platform, no monthly fee." actions={<button onClick={() => newRule({ ...EMPTY })} className="btn btn-primary"><Plus size={14} /> New rule</button>} />
 
       {/* Connection: a checklist that tells you exactly where you are */}
       {(() => {
@@ -132,6 +140,14 @@ export default function Automations() {
         );
       })()}
 
+      {metered && plan && (
+        <div className={cn('card-flat p-4 mb-6 grid sm:grid-cols-[1fr_1fr_auto] gap-x-6 gap-y-3 items-center', (rulesFull || meterFull(plan.usage?.sends) || plan.effectivePlan === 'free') && 'border-warn/40')}>
+          <UsageBar label="Automation rules" meter={plan.usage?.rules} hint={rulesFull ? 'Rule limit reached — upgrade to add more' : undefined} />
+          <UsageBar label="Automated replies this month" meter={plan.usage?.sends} hint={plan.effectivePlan === 'free' ? 'Automations are paused on the free plan' : meterFull(plan.usage?.sends) ? 'Send limit reached — replies are skipped until next month' : undefined} />
+          <button onClick={() => openUpgrade()} className="btn btn-sm justify-self-start sm:justify-self-end"><Zap size={13} className="text-accent" /> More on Pro / Studio</button>
+        </div>
+      )}
+
       <div className="mb-4"><Tabs value={tab} onChange={setTab} tabs={[{ id: 'rules', label: `Rules (${rules.data?.rules.length ?? 0})` }, { id: 'test', label: <span className="inline-flex items-center gap-1.5"><FlaskConical size={13} /> Test</span> }, { id: 'log', label: `Activity (${s?.events24h ?? 0} today)` }]} /></div>
 
       {tab === 'rules' && (
@@ -141,7 +157,7 @@ export default function Automations() {
             { name: 'DM keyword → resource', trigger_type: 'dm_keyword', keywordsText: 'guide, template, checklist', reply_text: 'Here you go — the resource you asked for 👇', desc: 'Auto-reply to keyword DMs' },
             { name: 'Story reply → thanks + link', trigger_type: 'story_reply', keywordsText: 'yes, me, info', reply_text: 'Thanks for replying to my story! Here’s the thing I mentioned 👇', desc: 'Story engagement responder' },
           ].map((t) => (
-            <button key={t.name} onClick={() => setEditing({ ...EMPTY, ...t })} className="card px-3 py-2 text-left hover:border-line-2 transition-colors"><div className="text-[12.5px] font-medium inline-flex items-center gap-1.5"><Zap size={12} className="text-accent" />{t.name}</div><div className="text-[11px] text-muted">{t.desc}</div></button>
+            <button key={t.name} onClick={() => newRule({ ...EMPTY, ...t })} className="card px-3 py-2 text-left hover:border-line-2 transition-colors"><div className="text-[12.5px] font-medium inline-flex items-center gap-1.5"><Zap size={12} className="text-accent" />{t.name}</div><div className="text-[11px] text-muted">{t.desc}</div></button>
           ))}
         </div>
       )}
@@ -170,7 +186,7 @@ export default function Automations() {
             })}
           </div>
         ) : (
-          <Empty icon={<Bot size={28} />} title="No rules yet" body="Start with the classic: “comment LINK on my post → I DM you the link”. Rules run top-down by priority; the first match wins." action={<div className="flex gap-2 justify-center"><button onClick={() => setEditing({ ...EMPTY, name: 'Comment LINK → send link', trigger_type: 'comment_keyword', keywordsText: 'link', reply_text: 'Hey {{username}}! Here’s the link you asked for 👇', public_reply_text: 'Sent you a DM ✉️' })} className="btn btn-primary"><Zap size={14} /> Use template</button><button onClick={() => setEditing({ ...EMPTY })} className="btn">Blank rule</button></div>} />
+          <Empty icon={<Bot size={28} />} title="No rules yet" body="Start with the classic: “comment LINK on my post → I DM you the link”. Rules run top-down by priority; the first match wins." action={<div className="flex gap-2 justify-center"><button onClick={() => newRule({ ...EMPTY, name: 'Comment LINK → send link', trigger_type: 'comment_keyword', keywordsText: 'link', reply_text: 'Hey {{username}}! Here’s the link you asked for 👇', public_reply_text: 'Sent you a DM ✉️' })} className="btn btn-primary"><Zap size={14} /> Use template</button><button onClick={() => newRule({ ...EMPTY })} className="btn">Blank rule</button></div>} />
         )
       )}
 

@@ -1,0 +1,63 @@
+[
+  {
+    "id": "demo_cold_email",
+    "author": "studio.marta",
+    "media_type": "video",
+    "duration": 42,
+    "play_count": 184000,
+    "category": "Business & Marketing",
+    "content_type": "tips_list",
+    "hook": "Your cold email is too long. Three lines. That's it.",
+    "title": "Cold email that gets replies: the 3-line structure",
+    "one_liner": "Why short cold emails outperform long ones, with a template you can copy.",
+    "key_points": [
+      "Line 1: one specific observation about them, not about you",
+      "Line 2: the one thing you do, in plain words, no adjectives",
+      "Line 3: a yes/no question — no calendar link in the first email"
+    ],
+    "tags": ["cold-email", "sales", "copywriting"],
+    "usefulness_score": 9,
+    "action_type": "try"
+  },
+  {
+    "id": "demo_type_pairing",
+    "author": "ben.builds",
+    "media_type": "carousel",
+    "duration": null,
+    "play_count": null,
+    "like_count": 12400,
+    "category": "Design & Visual Aesthetics",
+    "content_type": "tutorial",
+    "hook": "One serif. One sans. One weight change.",
+    "title": "Type pairing rule for landing pages",
+    "one_liner": "A 40-second rule for pairing fonts so a page looks designed, not assembled.",
+    "key_points": [
+      "Display serif for headings only; body in a plain sans at 16–18 px",
+      "Line height 1.5 for body, 1.1 for headings",
+      "For emphasis change weight, not family"
+    ],
+    "tags": ["typography", "landing-page", "ui"],
+    "usefulness_score": 8,
+    "action_type": "reference"
+  },
+  {
+    "id": "demo_miso_pasta",
+    "author": "kitchen.tomas",
+    "media_type": "video",
+    "duration": 31,
+    "play_count": 2100000,
+    "category": "Food & Recipes",
+    "content_type": "recipe",
+    "hook": "Weeknight pasta with no cream and one pan.",
+    "title": "20-minute miso butter pasta",
+    "one_liner": "Miso + butter + starchy pasta water makes a glossy sauce with no cream.",
+    "key_points": [
+      "1 tbsp white miso + 2 tbsp butter per 200 g pasta",
+      "Emulsify with a ladle of pasta water, off the heat",
+      "Finish with lemon zest and black pepper"
+    ],
+    "tags": ["pasta", "weeknight", "japanese"],
+    "usefulness_score": 8,
+    "action_type": "try"
+  }
+]

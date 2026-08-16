@@ -100,12 +100,31 @@ export const config = {
   ffmpegPath: process.env.FFMPEG_PATH || '',
   autoStartWorker: bool(process.env.AUTO_START_WORKER, true),
 
-  // Meta / Instagram automations (can also be set from the Settings UI; env wins)
+  // Meta / Instagram automations (can also be set from the Settings UI; env wins — for the owner tenant only)
   metaAppSecret: process.env.META_APP_SECRET || '',
   metaVerifyToken: process.env.META_VERIFY_TOKEN || '',
   igAccessToken: process.env.IG_ACCESS_TOKEN || '',
   igUserId: process.env.IG_USER_ID || '',
   graphApiVersion: process.env.GRAPH_API_VERSION || 'v23.0',
+
+  // Hosted mode (resurfly.com): public signup, one tenant per account, trial + paid plans. Default off = single-tenant open-source app.
+  hosted: bool(process.env.HOSTED, false),
+  signupsEnabled: bool(process.env.SIGNUPS_ENABLED, bool(process.env.HOSTED, false)),
+  trialDays: Math.max(0, num(process.env.TRIAL_DAYS, 3)),
+
+  // Paddle billing (hosted mode only)
+  paddle: {
+    env: (process.env.PADDLE_ENV === 'production' ? 'production' : 'sandbox') as 'sandbox' | 'production',
+    apiKey: process.env.PADDLE_API_KEY || '',
+    clientToken: process.env.PADDLE_CLIENT_TOKEN || '',
+    webhookSecret: process.env.PADDLE_WEBHOOK_SECRET || '',
+    prices: {
+      proMonth: process.env.PADDLE_PRICE_PRO_MONTH || '',
+      proYear: process.env.PADDLE_PRICE_PRO_YEAR || '',
+      studioMonth: process.env.PADDLE_PRICE_STUDIO_MONTH || '',
+      studioYear: process.env.PADDLE_PRICE_STUDIO_YEAR || '',
+    },
+  },
 };
 
 export type Config = typeof config;

@@ -1,7 +1,13 @@
 import Database from 'better-sqlite3';
 import { config } from './config.js';
+import { reindexAll } from './services/search.js';
 
 export type DB = Database.Database;
+
+/** Tenant id used for global (server-wide) settings/meta rows: worker pause state, concurrency, paddle event ids. */
+export const GLOBAL = 0;
+/** The open-source / owner tenant. Its item ids are unprefixed and its env credentials apply. */
+export const OWNER_TENANT = 1;
 
 let _db: DB | null = null;
 
@@ -12,12 +18,15 @@ export function db(): DB {
   d.pragma('synchronous = NORMAL');
   d.pragma('foreign_keys = ON');
   d.pragma('busy_timeout = 5000');
-  migrate(d);
-  _db = d;
+  _db = d; // set before migrating: post-migration hooks (FTS reindex) go through db()
+  try { migrate(d); } catch (e) { _db = null; throw e; }
+  ensureOwnerUser(d);
   return d;
 }
 
-const MIGRATIONS: { id: number; sql: string }[] = [
+interface Migration { id: number; sql: string; after?: (d: DB) => void }
+
+const MIGRATIONS: Migration[] = [
   {
     id: 1,
     sql: `
@@ -174,39 +183,169 @@ CREATE INDEX IF NOT EXISTS idx_items_excluded ON items(excluded);
 CREATE INDEX IF NOT EXISTS idx_items_saved_est ON items(saved_at_est);
 `,
   },
+  {
+    // Multi-tenant (hosted mode). Tenant 1 = the owner / open-source single user; everything existing is assigned to it.
+    id: 3,
+    sql: `
+CREATE TABLE IF NOT EXISTS tenants (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT,
+  plan TEXT NOT NULL DEFAULT 'trial',
+  plan_status TEXT NOT NULL DEFAULT 'active',
+  trial_ends_at INTEGER,
+  plan_started_at INTEGER,
+  plan_renews_at INTEGER,
+  paddle_customer_id TEXT,
+  paddle_subscription_id TEXT,
+  paddle_price_id TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  cancelled_at INTEGER,
+  deleted_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+  email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  password_hash TEXT,
+  is_owner INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  last_login_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id);
+CREATE TABLE IF NOT EXISTS usage (
+  tenant_id INTEGER NOT NULL,
+  period TEXT NOT NULL,
+  metric TEXT NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (tenant_id, period, metric)
+);
+INSERT OR IGNORE INTO tenants (id, name, plan, plan_status, created_at, updated_at) VALUES (1, 'owner', 'owner', 'active', strftime('%s','now'), strftime('%s','now'));
+
+ALTER TABLE items ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1;
+CREATE INDEX IF NOT EXISTS idx_items_tenant ON items(tenant_id);
+DROP INDEX IF EXISTS idx_items_shortcode;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_items_tenant_shortcode ON items(tenant_id, shortcode);
+
+ALTER TABLE imports ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1;
+CREATE INDEX IF NOT EXISTS idx_imports_tenant ON imports(tenant_id, id DESC);
+ALTER TABLE automation_rules ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1;
+CREATE INDEX IF NOT EXISTS idx_automation_rules_tenant ON automation_rules(tenant_id, priority ASC, id ASC);
+ALTER TABLE automation_events ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1;
+CREATE INDEX IF NOT EXISTS idx_automation_events_tenant_ts ON automation_events(tenant_id, ts DESC);
+
+CREATE TABLE automation_contacts_new (
+  tenant_id INTEGER NOT NULL DEFAULT 1,
+  ig_id TEXT NOT NULL,
+  username TEXT,
+  first_seen INTEGER NOT NULL,
+  last_seen INTEGER NOT NULL,
+  message_count INTEGER NOT NULL DEFAULT 0,
+  last_rule_hits TEXT,
+  PRIMARY KEY (tenant_id, ig_id)
+);
+INSERT INTO automation_contacts_new (tenant_id, ig_id, username, first_seen, last_seen, message_count, last_rule_hits)
+  SELECT 1, ig_id, username, first_seen, last_seen, message_count, last_rule_hits FROM automation_contacts;
+DROP TABLE automation_contacts;
+ALTER TABLE automation_contacts_new RENAME TO automation_contacts;
+CREATE INDEX IF NOT EXISTS idx_automation_contacts_seen ON automation_contacts(tenant_id, last_seen DESC);
+
+CREATE TABLE settings_new (
+  tenant_id INTEGER NOT NULL DEFAULT 1,
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (tenant_id, key)
+);
+INSERT INTO settings_new (tenant_id, key, value, updated_at) SELECT 1, key, value, updated_at FROM settings;
+DROP TABLE settings;
+ALTER TABLE settings_new RENAME TO settings;
+
+CREATE TABLE meta_new (
+  tenant_id INTEGER NOT NULL DEFAULT 1,
+  key TEXT NOT NULL,
+  value TEXT,
+  PRIMARY KEY (tenant_id, key)
+);
+INSERT INTO meta_new (tenant_id, key, value)
+  SELECT CASE WHEN key IN ('worker_paused', 'worker_concurrency', 'worker_pause_reason') THEN 0 ELSE 1 END, key, value FROM meta;
+DROP TABLE meta;
+ALTER TABLE meta_new RENAME TO meta;
+
+DROP TABLE IF EXISTS items_fts;
+CREATE VIRTUAL TABLE items_fts USING fts5(
+  item_id UNINDEXED, tenant_id UNINDEXED, title, summary, key_points, tags, caption, transcript, author, entities,
+  tokenize = 'unicode61 remove_diacritics 2'
+);
+`,
+    after: (d) => {
+      insertOwnerUser(d);
+      const n = reindexAll();
+      if (n) console.log(`[migrate] rebuilt the search index for ${n} saves (multi-tenant schema)`);
+    },
+  },
 ];
 
 function migrate(d: DB) {
   d.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (id INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)`);
   const applied = new Set<number>(d.prepare('SELECT id FROM schema_migrations').all().map((r: any) => r.id));
-  const run = d.transaction((m: { id: number; sql: string }) => {
+  const run = d.transaction((m: Migration) => {
     d.exec(m.sql);
+    if (m.after) m.after(d);
     d.prepare('INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)').run(m.id, Date.now());
   });
   for (const m of MIGRATIONS) if (!applied.has(m.id)) run(m);
 }
 
+/** Owner login email: APP_USERNAME if it looks like an email, else `${APP_USERNAME}@local`. */
+export function ownerEmail(): string | null {
+  const u = config.appUsername.trim();
+  if (!u) return null;
+  return u.includes('@') ? u.toLowerCase() : `${u.toLowerCase()}@local`;
+}
+
+function insertOwnerUser(d: DB) {
+  const email = ownerEmail();
+  if (!email) return;
+  const exists = d.prepare('SELECT id FROM users WHERE tenant_id = 1 AND is_owner = 1').get();
+  if (exists) return;
+  d.prepare('INSERT OR IGNORE INTO users (tenant_id, email, password_hash, is_owner, created_at) VALUES (1, ?, NULL, 1, ?)').run(email, Math.floor(Date.now() / 1000));
+}
+
+/** APP_USERNAME may be set (or changed) after the migration ran — keep the owner user row in sync (idempotent). */
+function ensureOwnerUser(d: DB) {
+  const email = ownerEmail();
+  if (!email) return;
+  try {
+    const cur = d.prepare('SELECT id, email FROM users WHERE tenant_id = 1 AND is_owner = 1').get() as { id: number; email: string } | undefined;
+    if (!cur) insertOwnerUser(d);
+    else if (cur.email.toLowerCase() !== email) d.prepare('UPDATE users SET email = ? WHERE id = ?').run(email, cur.id);
+  } catch (e) { console.warn('[db] could not sync owner user', e); }
+}
+
 export const now = () => Math.floor(Date.now() / 1000);
 
-export function getMeta(key: string): string | null {
-  const r = db().prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | undefined;
+/* ---------------- meta / settings (always tenant-scoped; tid 0 = global) ---------------- */
+
+export function getMeta(tid: number, key: string): string | null {
+  const r = db().prepare('SELECT value FROM meta WHERE tenant_id = ? AND key = ?').get(tid, key) as { value: string } | undefined;
   return r?.value ?? null;
 }
-export function setMeta(key: string, value: string | null) {
-  if (value === null) db().prepare('DELETE FROM meta WHERE key = ?').run(key);
-  else db().prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+export function setMeta(tid: number, key: string, value: string | null) {
+  if (value === null) db().prepare('DELETE FROM meta WHERE tenant_id = ? AND key = ?').run(tid, key);
+  else db().prepare('INSERT INTO meta (tenant_id, key, value) VALUES (?, ?, ?) ON CONFLICT(tenant_id, key) DO UPDATE SET value = excluded.value').run(tid, key, value);
 }
 
-export function getSetting(key: string): string | null {
-  const r = db().prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+export function getSetting(tid: number, key: string): string | null {
+  const r = db().prepare('SELECT value FROM settings WHERE tenant_id = ? AND key = ?').get(tid, key) as { value: string } | undefined;
   return r?.value ?? null;
 }
-export function setSetting(key: string, value: string | null) {
-  if (value === null || value === '') db().prepare('DELETE FROM settings WHERE key = ?').run(key);
-  else db().prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at').run(key, value, now());
+export function setSetting(tid: number, key: string, value: string | null) {
+  if (value === null || value === '') db().prepare('DELETE FROM settings WHERE tenant_id = ? AND key = ?').run(tid, key);
+  else db().prepare('INSERT INTO settings (tenant_id, key, value, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(tenant_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at').run(tid, key, value, now());
 }
-export function allSettings(): Record<string, string> {
-  const rows = db().prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
+export function allSettings(tid: number): Record<string, string> {
+  const rows = db().prepare('SELECT key, value FROM settings WHERE tenant_id = ?').all(tid) as { key: string; value: string }[];
   return Object.fromEntries(rows.map((r) => [r.key, r.value]));
 }
 

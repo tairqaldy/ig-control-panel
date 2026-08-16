@@ -17,3 +17,23 @@
 **Data deletion callback.** This app does not use Facebook Login for other users; the operator is the only user. Deletion requests: message the account owner on Instagram.
 
 **Contact.** The Instagram account that runs this instance.
+
+---
+
+# Privacy notes for the hosted service (resurfly.com)
+
+The hosted version runs the same open-source code, operated by Resurfly (contact: the e-mail on the pricing page). What is different when you use resurfly.com instead of your own server:
+
+**Account.** We store your e-mail address, a salted password hash, your plan and billing status, and usage counters (how many saves were analyzed, questions asked, messages sent) so the plan limits can be enforced.
+
+**Your saved posts.** The harvester runs in *your* browser with *your* Instagram session; we never see or store your Instagram password or session cookies. What reaches us is the harvest JSON (post metadata, captions, creator usernames, thumbnail/video URLs). We download thumbnails/frames and, for reels, the audio, so we can transcribe and analyze them. Analyses, transcripts, embeddings and thumbnails are stored per account and are never shown to other accounts.
+
+**Processors.** OpenAI (analysis, transcription, embeddings — under OpenAI's API terms, no training on your data), Railway (hosting, EU/US regions), Cloudflare (DNS, and R2 object storage when enabled), Paddle (payments — Paddle is the merchant of record and stores card details; we never see them).
+
+**Retention.** Everything is kept while your account is active. When a subscription ends (or the trial ends and you don't upgrade) your data stays readable and exportable for **30 days**, then analyses, media, transcripts and vectors are deleted; the account row keeps only your e-mail and invoice history. You can delete everything immediately from Billing → Delete account, or by e-mailing us.
+
+**Export.** JSON, CSV, Markdown and Obsidian exports work on every plan, including after the trial ends.
+
+**Automations.** If you connect your own Meta app, incoming DMs/comments/story replies are processed exactly as described above for a self-hosted instance, scoped to your account.
+
+**No tracking.** No third-party analytics or ad pixels on the app; the marketing page may use privacy-preserving, cookie-less analytics.

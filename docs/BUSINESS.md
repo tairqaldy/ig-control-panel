@@ -49,16 +49,23 @@ Assumptions per paying user: 3,000 saves at signup, 100 new saves/month, 40 ques
 | Payment processing (Paddle ~5% + $0.50) | ~$1.00 | ~$1.00 |
 | **Total** | **$25 (Std) / $11.5 (Eco)** | **≈ $2.50** |
 
-Pricing that keeps a healthy margin and stays honest:
+Pricing that keeps a healthy margin and stays honest (these are the plans the hosted app enforces — see `PLANS` in `server/src/services/plans.ts` and `docs/dev/HOSTED-SPEC.md`):
 
-| Plan | Price | What's in it | Gross margin |
-|---|---|---|---|
-| **Free / self-host** | $0 | this repo, your keys, your server | — |
-| **Dig** (one-time) | **$19** | one full library dig, Economy tier, 3,000 saves included (+$4 per extra 1,000), Ask for 30 days, full export | ~45% |
-| **Resurfly Pro** | **$9 / mo** or **$79 / yr** | up to 5,000 saves analyzed on Standard (fair use), continuous harvests, Ask, graph, exports, DM automations | month 1 −$16 (Std) → **payback in month 3–4**, then ~72% |
-| **Pro + Deep** add-on | +$15 one-time | re-run the whole library on Standard 4-frame + full transcripts | ~50% |
+| Plan | Price | Allowance | Our cost (typical user) | Gross margin |
+|---|---|---|---|---|
+| **Self-host** | $0 | this repo, your keys, your server | — | — |
+| **Trial** | free, 3 days | newest **100** saves analyzed on Standard, 20 Ask questions, 1 automation rule, 100 sends | ≈ $0.90 once | acquisition cost |
+| **Free** (after trial) | $0 | browse, search, export what was analyzed; no new analysis, 5 Ask/mo, automations paused | ≈ $0.03/mo | — |
+| **Pro** | **$12 / mo** or **$99 / yr** | up to **2,000** saves analyzed (300 new / mo), 300 Ask / mo, 10 rules, 5,000 sends / mo, 20 harvests / day, priority queue ×2 | month 1 ≈ $13 (1,500-save library on Standard) then ≈ $4.2 / mo | month 1 ≈ −8%, **cumulative break-even in month 2**, then ≈ 65% (annual: ≈ 40% over the year) |
+| **Studio** | **$34 / mo** or **$290 / yr** | up to **10,000** saves (2,000 new / mo), 1,500 Ask / mo, unlimited rules, 25,000 sends / mo, 50 harvests / day, priority queue ×4 | month 1 ≈ $38 (5,000-save library) then ≈ $8 / mo | month 1 ≈ −12%, break-even in month 2, then ≈ 76% |
 
-Notes: the initial dig is the only expensive moment, so either charge for it once (Dig) or amortize it over a subscription with an annual plan default. Show the per-plan cost table on the pricing page — "your $9 covers about $2.5 of API + storage; the rest pays for the servers, the harvester upkeep and the person answering support."
+Cost lines behind those numbers: analysis $0.0076/save (Standard), Ask ≈ $0.006/question, storage 200 KB/save on R2, ~$0.5–1 amortized compute, Paddle ≈ 5% + $0.50 per charge.
+
+Notes:
+- The initial dig is the only expensive moment. The trial deliberately caps it at 100 saves (≈ $0.90) so a tire-kicker costs less than a coffee, and the *newest* 100 are analyzed so the sample looks like the person's actual taste.
+- Every plan is limited by an *allowance* rather than a hard "your account is broken" wall: hitting a limit returns HTTP 402 with the exact numbers, and the UI turns that into an Upgrade prompt with the plan cards.
+- Worst case for Studio (someone with 10,000 saves analyzed in month 1 on Standard ≈ $76) is a −$42 month; recovered by month 4. If that becomes common, the cheap guard is: Standard for the first 2,000 saves of a library, Economy for the rest (quality on old saves matters less) — this is a one-line policy in the worker, not implemented yet.
+- Show the cost table on the pricing page — "your $12 covers about $4 of API + storage in a normal month; the rest pays for the servers, the harvester upkeep, and the person answering support."
 
 ## 4. Data retention (hosted)
 
@@ -67,24 +74,24 @@ Notes: the initial dig is the only expensive moment, so either charge for it onc
 - The retention job is a nightly cron: `DELETE FROM items WHERE tenant_id IN (SELECT id FROM tenants WHERE status='cancelled' AND cancelled_at < now()-30d)` + purge the tenant's R2 prefix.
 - Storage per lapsed user is ~600 MB → holding it forever would cost real money at scale, hence the 30-day rule. Say so on the pricing page.
 
-## 5. Technical plan for the hosted version
+## 5. How the hosted version is built
 
-The open-source app stays single-tenant (SQLite + local files). The hosted product is the same codebase behind adapters:
+It is this repository with `HOSTED=true`. The design is in [docs/dev/HOSTED-SPEC.md](dev/HOSTED-SPEC.md); the short version:
 
-1. **Tenancy**: `tenants` table; every table gets `tenant_id`; all queries scoped by the session's tenant. Postgres (Neon or Railway Postgres) with `pgvector` for embeddings (drop the in-memory matrix), FTS via `tsvector`.
-2. **Auth**: email magic links (Resend) + Google OAuth via Auth.js/Lucia; the OSS passcode login becomes an adapter.
-3. **Storage**: thumbnails/frames to Cloudflare R2 (S3 API) under `tenant/<id>/…`; served through signed URLs or a Worker.
-4. **Workers**: the same pipeline as a separate Railway service, pulling jobs from a Postgres queue (`FOR UPDATE SKIP LOCKED`), per-tenant fairness (round-robin) and per-tenant budgets.
-5. **Billing**: Paddle (merchant of record → handles VAT/sales tax globally). Overlay checkout, webhooks (`subscription.created/updated/canceled`, `transaction.completed`) → `tenants.plan/status`; Paddle customer portal for cancellations/invoices; usage caps enforced by the worker.
-6. **Harvester**: unchanged — it runs in the user's browser; the "Send to Resurfly" token is minted per tenant.
-7. **Ops**: Sentry, structured logs, cost dashboards (sum of `cost_usd` per tenant/day), the retention cron, backups (Neon PITR / R2 versioning).
+1. **Tenancy**: `tenants` / `users` / `usage` tables in the same SQLite file; every row carries `tenant_id`; the owner account (the passcode login of the OSS build) is tenant 1, so a self-hoster's database upgrades in place. Per-tenant worker fairness (round-robin, weighted Studio 3 : Pro 2 : Trial 1) and per-tenant concurrency.
+2. **Auth**: e-mail + password (scrypt) sign-up when `SIGNUPS_ENABLED=true`; the OSS passcode login keeps working for the owner.
+3. **Plans & quotas**: `PLANS` table in code (trial / free / pro / studio / owner) → HTTP 402 `{ code: 'quota', metric, used, limit, plan }` from any limited route; the web turns that into an Upgrade modal.
+4. **Billing**: Paddle (merchant of record → VAT/sales tax handled). Overlay checkout from the web, webhooks (`subscription.*`, `transaction.completed`) update `tenants.plan/plan_status`, customer portal for cancellations/invoices. Sandbox first, then flip `PADDLE_ENV=live`.
+5. **Storage**: local volume today; the R2 adapter (thumbnails/frames under `tenant/<id>/…`) is the next step when the volume gets close to full.
+6. **Harvester**: unchanged — runs in the user's browser; the "Send to Resurfly" token is minted per tenant.
+7. **Retention**: `DELETE /api/account` wipes a tenant; the nightly 30-days-after-cancel job is on the list.
 
-Estimated effort: ~2–3 weeks for one engineer to reach a billable beta. What's needed to start: Paddle account (sandbox first), Cloudflare account (R2 bucket + API token), Neon (or Railway Postgres) DB, a domain, Resend (email), Sentry (optional).
+Later, if it outgrows one box: Postgres (Neon) with `pgvector`, a separate worker service, Sentry, cost dashboards per tenant/day.
 
 ## 6. Things worth adding next (roadmap)
 
 - **Collections / smart folders** ("Recipes", "Content ideas") built from filters, shareable read-only links.
-- **Weekly digest e-mail** — 5 resurflyd saves + what you saved this week, one click to Ask.
+- **Weekly digest e-mail** — 5 resurfaced saves + what you saved this week, one click to Ask.
 - **Chrome extension** — save-and-analyze any reel while browsing; auto-harvest new saves nightly.
 - **Content-idea studio** — remix a save into a script/hook set for your niche (the `remix_idea` field is the seed).
 - **Sensitive-content filter** — auto-exclude categories you pick (personal, adult, memes, ads) *before* paying for analysis; a "private mode" that keeps some saves local-only and never sends them to OpenAI.

@@ -1,17 +1,20 @@
 import { memo } from 'react';
 import { motion } from 'motion/react';
-import { Heart, Play, Images, FileText, AlertCircle, Loader2, Clock } from 'lucide-react';
+import { Heart, Play, Images, FileText, AlertCircle, Loader2, Clock, Sparkles } from 'lucide-react';
 import type { ItemLight } from '../lib/types';
 import { cn, fmtNum, fmtDuration } from '../lib/utils';
 import { CategoryDot } from './ui';
-import { useItemModal } from '../lib/store';
+import { useItemModal, useQuota } from '../lib/store';
 
 export const ItemCard = memo(function ItemCard({ item, index = 0, selected, onSelect, view = 'grid' }: { item: ItemLight; index?: number; selected?: boolean; onSelect?: (id: string, e: React.MouseEvent) => void; view?: 'grid' | 'list' }) {
   const modal = useItemModal();
+  const { analyzeExhausted, openUpgrade } = useQuota();
   const a = item.analysis;
   const title = a?.title || (item.caption ? item.caption.split('\n')[0].slice(0, 90) : item.author ? `@${item.author}` : 'Untitled');
   const status = item.analysis_status;
   const busy = item.queue_state === 'running' || status === 'running';
+  // Hosted: a pending save that won't be analyzed because the tenant is out of allowance gets a soft "Upgrade to analyze" pill.
+  const needsUpgrade = analyzeExhausted && status === 'pending' && !busy && item.queue_state !== 'queued';
 
   const onClick = (e: React.MouseEvent) => {
     if ((e.metaKey || e.ctrlKey || e.shiftKey) && onSelect) { e.preventDefault(); onSelect(item.id, e); return; }
@@ -36,7 +39,7 @@ export const ItemCard = memo(function ItemCard({ item, index = 0, selected, onSe
           {a && <span className="inline-flex items-center gap-1.5"><CategoryDot category={a.category} />{a.category}</span>}
         </div>
         <div className="hidden sm:block shrink-0 w-24 truncate text-[12px] text-muted text-right">{item.author ? `@${item.author}` : ''}</div>
-        <StatusGlyph status={status} busy={busy} />
+        {needsUpgrade ? <span onClick={(e) => { e.stopPropagation(); openUpgrade({ reason: 'Upgrade to analyze the rest of your library' }); }} className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent-soft px-2 py-0.5 text-[10.5px] font-medium text-accent hover:bg-accent hover:text-accent-ink transition-colors" title="Outside your plan's analysis allowance"><Sparkles size={10} /> Upgrade</span> : <StatusGlyph status={status} busy={busy} />}
       </motion.button>
     );
   }
@@ -89,6 +92,10 @@ export const ItemCard = memo(function ItemCard({ item, index = 0, selected, onSe
               {a.tags.slice(0, 2).map((t) => <span key={t} className="text-[11px] text-muted">#{t}</span>)}
               {a.usefulness_score >= 8 && <span className="ml-auto font-mono text-[10px] text-accent" title="Usefulness score">{a.usefulness_score}/10</span>}
             </>
+          ) : needsUpgrade ? (
+            <button type="button" onClick={(e) => { e.stopPropagation(); openUpgrade({ reason: 'Upgrade to analyze the rest of your library' }); }} className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent-soft px-2 py-0.5 text-[10.5px] font-medium text-accent hover:bg-accent hover:text-accent-ink transition-colors" title="This save is outside your plan's analysis allowance">
+              <Sparkles size={10} /> Upgrade to analyze
+            </button>
           ) : (
             <span className="text-[11px] text-muted-2 inline-flex items-center gap-1">
               {status === 'failed' ? <><AlertCircle size={11} className="text-danger" /> Analysis failed</> : status === 'skipped' ? 'Not enough content' : busy ? <><Loader2 size={11} className="animate-spin" /> Analyzing…</> : <><Clock size={11} /> Waiting for analysis</>}

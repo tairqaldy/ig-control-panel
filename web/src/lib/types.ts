@@ -174,6 +174,31 @@ export interface GraphNode {
 export interface GraphLink { source: string; target: string; kind: 'tag' | 'author' | 'category' | 'similar'; score?: number }
 export interface GraphData { nodes: GraphNode[]; links: GraphLink[]; meta: { items: number; tags: number; authors: number; categories: number } }
 
+/* ---------------- Hosted mode: plans, quotas, billing (docs/dev/HOSTED-SPEC.md §4–§5) ---------------- */
+export type PlanId = 'owner' | 'trial' | 'free' | 'pro' | 'studio';
+/** Server limits are numbers or Infinity; Infinity serialises to null in JSON → treat null / non-finite as "unlimited". */
+export type Limit = number | null;
+export interface Limits { analyzeTotal: Limit; analyzePerMonth: Limit; askPerMonth: Limit; askPerMinute: Limit; rules: Limit; sendsPerMonth: Limit; harvestsPerDay: Limit; graphNodes: Limit; concurrency: Limit }
+export interface UsageMeter { used: number; limit: Limit }
+export type UsageMetric = 'analyze' | 'analyzeMonth' | 'ask' | 'sends' | 'rules' | 'harvests';
+export interface PlanInfo {
+  plan: PlanId;
+  effectivePlan: PlanId;
+  status: string;
+  trialEndsAt: number | null;
+  renewsAt: number | null;
+  limits: Limits;
+  usage: Record<UsageMetric, UsageMeter>;
+  paddle: { env: 'sandbox' | 'production'; clientToken: string | null; prices: { proMonth: string | null; proYear: string | null; studioMonth: string | null; studioYear: string | null } };
+  canManage: boolean;
+}
+/** Body of an HTTP 402 response (dispatched on window as the `rs:quota` CustomEvent detail). */
+export interface QuotaError { error: string; code: 'quota'; metric: string; window?: 'total' | 'month' | 'day' | 'minute' | null; used: number; limit: Limit; remaining?: Limit; resetsAt?: number | null; plan: PlanId; upgrade: true }
+/** GET /api/plans (public catalog). The web tolerates a few shapes — see components/Pricing.tsx normalizeCatalog(). */
+export interface PlanCatalogEntry { id: PlanId; name: string; blurb?: string; monthly: number | null; yearly: number | null; priceIds: { month: string | null; year: string | null }; limits: Limits }
+export interface PlansCatalog { trialDays: number; plans: PlanCatalogEntry[] }
+export interface QueueResponse extends WorkerStatus { justQueued: number; leftOut?: number; quota?: { used: number; limit: Limit; remaining: number; plan?: PlanId } }
+
 export interface Rule {
   id: number;
   name: string;

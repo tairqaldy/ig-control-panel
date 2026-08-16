@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import AdmZip from 'adm-zip';
-import { db, now, j } from '../db.js';
+import { db, now, j, OWNER_TENANT } from '../db.js';
 import type { HarvestFile, HarvestItem, MediaType, MediaUrls } from '../types.js';
 import { recomputeSavedAtEst } from './scope.js';
 
@@ -44,31 +44,37 @@ function mediaUrlsOf(h: HarvestItem): MediaUrls {
   return m;
 }
 
-function idFor(h: HarvestItem): string | null {
+/**
+ * Item id: the Instagram shortcode (or a hash of the URL / the pk). Item ids are global (media dirs, FTS, neighbors key on
+ * them), so for every tenant except the owner (tenant 1) the id is prefixed `t{tenant}_` — tenant 1 keeps its legacy ids.
+ */
+export function idFor(tid: number, h: HarvestItem): string | null {
   const code = h.code || (h.url ? shortcodeFromUrl(h.url) : null);
-  if (code) return code;
-  if (h.url) return 'u_' + crypto.createHash('sha1').update(h.url).digest('hex').slice(0, 16);
-  if (h.pk) return 'pk_' + String(h.pk);
-  return null;
+  let base: string | null = null;
+  if (code) base = code;
+  else if (h.url) base = 'u_' + crypto.createHash('sha1').update(h.url).digest('hex').slice(0, 16);
+  else if (h.pk) base = 'pk_' + String(h.pk);
+  if (!base) return null;
+  return tid === OWNER_TENANT ? base : `t${tid}_${base}`;
 }
 
 /**
- * Upsert normalized items. Existing items get their volatile fields refreshed (media urls, counts, collections),
+ * Upsert normalized items for one tenant. Existing items get their volatile fields refreshed (media urls, counts, collections),
  * but their pipeline outputs (analysis, transcript, thumbs) are preserved.
  */
-export function upsertItems(items: HarvestItem[], source: 'harvest' | 'export' | 'manual', filename?: string, opts: { rankOffset?: number } = {}): ImportResult {
+export function upsertItems(tid: number, items: HarvestItem[], source: 'harvest' | 'export' | 'manual', filename?: string, opts: { rankOffset?: number } = {}): ImportResult {
   const d = db();
   const t = now();
   const ids: string[] = [];
   let created = 0, updated = 0, skipped = 0;
 
-  const getStmt = d.prepare('SELECT id, media_status, analysis_status, saved_at, saved_rank FROM items WHERE id = ?');
+  const getStmt = d.prepare('SELECT id, media_status, analysis_status, saved_at, saved_rank FROM items WHERE id = ? AND tenant_id = ?');
   const insertStmt = d.prepare(`INSERT INTO items (
-      id, ig_pk, shortcode, url, source, media_type, product_type, author_username, author_name, author_pk, author_verified, author_pic_url,
+      id, tenant_id, ig_pk, shortcode, url, source, media_type, product_type, author_username, author_name, author_pk, author_verified, author_pic_url,
       caption, alt_text, location, music_title, music_artist, like_count, comment_count, play_count, duration, taken_at, saved_at, saved_rank,
       collections, media_urls, media_urls_fetched_at, raw, media_status, analysis_status, queue_state, created_at, updated_at
     ) VALUES (
-      @id, @ig_pk, @shortcode, @url, @source, @media_type, @product_type, @author_username, @author_name, @author_pk, @author_verified, @author_pic_url,
+      @id, @tenant_id, @ig_pk, @shortcode, @url, @source, @media_type, @product_type, @author_username, @author_name, @author_pk, @author_verified, @author_pic_url,
       @caption, @alt_text, @location, @music_title, @music_artist, @like_count, @comment_count, @play_count, @duration, @taken_at, @saved_at, @saved_rank,
       @collections, @media_urls, @media_urls_fetched_at, @raw, 'pending', 'pending', 'idle', @created_at, @updated_at
     )`);
@@ -91,12 +97,12 @@ export function upsertItems(items: HarvestItem[], source: 'harvest' | 'export' |
       analysis_status = CASE WHEN @media_urls IS NOT NULL AND analysis_status IN ('skipped','failed') THEN 'pending' ELSE analysis_status END,
       analysis_error = CASE WHEN @media_urls IS NOT NULL AND analysis_status IN ('skipped','failed') THEN NULL ELSE analysis_error END,
       updated_at = @updated_at
-    WHERE id = @id`);
+    WHERE id = @id AND tenant_id = @tenant_id`);
 
   const tx = d.transaction(() => {
     let rank = opts.rankOffset ?? 0;
     for (const h of items) {
-      const id = idFor(h);
+      const id = idFor(tid, h);
       if (!id) { skipped++; continue; }
       const code = h.code || (h.url ? shortcodeFromUrl(h.url) : null);
       const mtype = mediaTypeOf(h);
@@ -108,6 +114,7 @@ export function upsertItems(items: HarvestItem[], source: 'harvest' | 'export' |
       const musicTitle = music || h.original_audio || null;
       const row = {
         id,
+        tenant_id: tid,
         ig_pk: h.pk ? String(h.pk) : null,
         shortcode: code,
         url: h.url || (code ? canonicalUrl(code, h.product_type) : ''),
@@ -138,7 +145,7 @@ export function upsertItems(items: HarvestItem[], source: 'harvest' | 'export' |
         created_at: t,
         updated_at: t,
       };
-      const existing = getStmt.get(id) as any;
+      const existing = getStmt.get(id, tid) as any;
       if (existing) {
         updateStmt.run(row);
         updated++;
@@ -153,19 +160,19 @@ export function upsertItems(items: HarvestItem[], source: 'harvest' | 'export' |
   tx();
 
   // A harvest is always a newest-first prefix of the saved feed. If it brought NEW items, shift every older ranked
-  // item not in this import down by that many, so a limited/incremental re-harvest never collides with existing ranks.
+  // item (of this tenant) not in this import down by that many, so a limited/incremental re-harvest never collides with existing ranks.
   if (source === 'harvest' && created > 0 && ids.length) {
-    const older = (d.prepare('SELECT COUNT(*) AS n FROM items WHERE saved_rank IS NOT NULL').get() as any).n as number;
+    const older = (d.prepare('SELECT COUNT(*) AS n FROM items WHERE tenant_id = ? AND saved_rank IS NOT NULL').get(tid) as any).n as number;
     if (older > ids.length) {
-      const tmp = d.prepare(`UPDATE items SET saved_rank = saved_rank + ? WHERE saved_rank IS NOT NULL AND id NOT IN (${ids.map(() => '?').join(',')})`);
-      tmp.run(created, ...ids);
+      const tmp = d.prepare(`UPDATE items SET saved_rank = saved_rank + ? WHERE tenant_id = ? AND saved_rank IS NOT NULL AND id NOT IN (${ids.map(() => '?').join(',')})`);
+      tmp.run(created, tid, ...ids);
     }
   }
 
   const info = d
-    .prepare('INSERT INTO imports (source, filename, total, created, updated, skipped, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(source, filename || null, items.length, created, updated, skipped, t);
-  if (source === 'harvest') { try { recomputeSavedAtEst(); } catch (e) { console.warn('[import] saved_at_est recompute failed', e); } }
+    .prepare('INSERT INTO imports (tenant_id, source, filename, total, created, updated, skipped, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(tid, source, filename || null, items.length, created, updated, skipped, t);
+  if (source === 'harvest') { try { recomputeSavedAtEst(tid); } catch (e) { console.warn('[import] saved_at_est recompute failed', e); } }
   return { importId: Number(info.lastInsertRowid), total: items.length, created, updated, skipped, ids };
 }
 

@@ -3,9 +3,9 @@ import { Command } from 'cmdk';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { LayoutGrid, Library, MessageSquareText, Sparkles, Waypoints, Upload, Bot, Settings, Search, Tag, User, Sun, Moon, FileText } from 'lucide-react';
+import { LayoutGrid, Library, MessageSquareText, Sparkles, Waypoints, Upload, Bot, Settings, Search, Tag, User, Sun, Moon, FileText, CreditCard } from 'lucide-react';
 import { api, qs } from '../lib/api';
-import { useItemModal, usePalette, useTheme } from '../lib/store';
+import { useAuth, useItemModal, usePalette, useTheme } from '../lib/store';
 import type { Facets, ItemsResponse } from '../lib/types';
 import { useDebounced } from './ui';
 
@@ -14,6 +14,7 @@ export function CommandPalette() {
   const nav = useNavigate();
   const modal = useItemModal();
   const { toggle, theme } = useTheme();
+  const { hosted } = useAuth();
   const [q, setQ] = useState('');
   const dq = useDebounced(q, 200);
   useEffect(() => { if (!open) setQ(''); }, [open]);
@@ -63,7 +64,8 @@ export function CommandPalette() {
                 <Command.Group heading="Go to">
                   {[
                     { l: 'Overview', to: '/', I: LayoutGrid }, { l: 'Library', to: '/library', I: Library }, { l: 'Resurface', to: '/resurface', I: Sparkles }, { l: 'Ask', to: '/ask', I: MessageSquareText },
-                    { l: 'Graph', to: '/graph', I: Waypoints }, { l: 'Import', to: '/import', I: Upload }, { l: 'Automations', to: '/automations', I: Bot }, { l: 'Settings', to: '/settings', I: Settings },
+                    { l: 'Graph', to: '/graph', I: Waypoints }, { l: 'Import', to: '/import', I: Upload }, { l: 'Automations', to: '/automations', I: Bot },
+                    ...(hosted ? [{ l: 'Billing', to: '/billing', I: CreditCard }] : []), { l: 'Settings', to: '/settings', I: Settings },
                   ].filter((p) => !dq || p.l.toLowerCase().includes(dq.toLowerCase())).map((p) => (
                     <Item key={p.to} onSelect={() => go(() => nav(p.to))}><p.I size={14} className="text-muted" /><span className="text-[13px]">{p.l}</span></Item>
                   ))}

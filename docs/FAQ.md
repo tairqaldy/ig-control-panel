@@ -1,5 +1,9 @@
 # FAQ
 
+### Self-host or resurfly.com — which one?
+
+Same code. **Self-host** if you want to own the box and the bill: fork, Railway (~$5/mo), your OpenAI key (~$7.5 per 1,000 saves once), done in ~10 minutes. **[resurfly.com](https://resurfly.com)** if you want the result today: sign up, run the harvester, we run the servers and pay OpenAI — 3-day trial (newest 100 saves analyzed), then Pro $12/mo or Studio $34/mo. Exports work everywhere, so you can move between the two whenever you like. Details and margins: [BUSINESS.md](BUSINESS.md).
+
 ### What does it cost?
 
 Resurfly itself is free (MIT). Running it:
@@ -33,7 +37,7 @@ Skipped = there was nothing to analyze (no caption, no transcript, no fetchable 
 
 ### Multiple Instagram accounts?
 
-Run one Resurfly instance per account (it's single-user by design). Or import both harvests into one library — saves simply merge (creators/tags mix fine); the dashboard shows the username from the most recent harvest.
+Run one Resurfly instance per account (the self-hosted build is single-user by design; on resurfly.com, one account = one library). Or import both harvests into one library — saves simply merge (creators/tags mix fine); the dashboard shows the username from the most recent harvest.
 
 ### Can I use another LLM?
 

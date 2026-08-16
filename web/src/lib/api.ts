@@ -1,6 +1,13 @@
 /* Thin fetch wrapper for the Resurfly API */
 export class ApiError extends Error {
-  constructor(public status: number, message: string) { super(message); }
+  constructor(public status: number, message: string, public body?: unknown) { super(message); }
+}
+
+/** HTTP 402 + `{ code: 'quota' }` → global `rs:quota` event (the UpgradeModal listens); the error is still thrown to the caller. */
+function maybeQuota(status: number, data: unknown) {
+  if (status === 402 && data && typeof data === 'object' && (data as any).code === 'quota') {
+    window.dispatchEvent(new CustomEvent('rs:quota', { detail: data }));
+  }
 }
 
 async function req<T>(method: string, path: string, body?: unknown, init: RequestInit = {}): Promise<T> {
@@ -14,7 +21,10 @@ async function req<T>(method: string, path: string, body?: unknown, init: Reques
   }
   const ct = res.headers.get('content-type') || '';
   const data = ct.includes('application/json') ? await res.json().catch(() => null) : await res.text();
-  if (!res.ok) throw new ApiError(res.status, (data && (data as any).error) || (typeof data === 'string' && data) || `HTTP ${res.status}`);
+  if (!res.ok) {
+    maybeQuota(res.status, data);
+    throw new ApiError(res.status, (data && (data as any).error) || (typeof data === 'string' && data) || `HTTP ${res.status}`, data);
+  }
   return data as T;
 }
 
@@ -39,9 +49,10 @@ export async function ssePost(path: string, body: unknown, handlers: { onEvent: 
   if (res.status === 401) window.dispatchEvent(new CustomEvent('rs:unauthorized'));
   if (!res.ok || !res.body) {
     const t = await res.text().catch(() => '');
-    let msg = t;
-    try { msg = JSON.parse(t).error || t; } catch {}
-    throw new ApiError(res.status, msg || `HTTP ${res.status}`);
+    let msg = t; let parsed: unknown = null;
+    try { parsed = JSON.parse(t); msg = (parsed as any).error || t; } catch {}
+    maybeQuota(res.status, parsed);
+    throw new ApiError(res.status, msg || `HTTP ${res.status}`, parsed);
   }
   const reader = res.body.getReader();
   const dec = new TextDecoder();

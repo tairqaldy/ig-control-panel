@@ -13,27 +13,27 @@ function seeded(seed: string) {
 export function todayKey(): string { return new Date().toISOString().slice(0, 10); }
 
 /**
- * Pick N saves worth resurfacing today. Weighted by usefulness, evergreen-ness, time since last resurflyd, and age.
+ * Pick N saves worth resurfacing today. Weighted by usefulness, evergreen-ness, time since last resurfaced, and age.
  * Deterministic per day so the "Today" set is stable.
  */
-export function pickResurface(n = 3, dateKey = todayKey()): ItemRow[] {
+export function pickResurface(tid: number, n = 3, dateKey = todayKey()): ItemRow[] {
   const d = db();
-  // Stable for the whole day: persist the chosen ids on first computation (marking items "resurflyd" must not reshuffle the set).
+  // Stable for the whole day: persist the chosen ids on first computation (marking items "resurfaced" must not reshuffle the set).
   const key = `resurface_picks:${dateKey}:${n}`;
-  const stored = j<string[] | null>(getMeta(key), null);
+  const stored = j<string[] | null>(getMeta(tid, key), null);
   if (stored && stored.length) {
-    const rows = d.prepare(`SELECT * FROM items WHERE id IN (${stored.map(() => '?').join(',')}) AND archived = 0 AND excluded = 0`).all(...stored) as ItemRow[];
+    const rows = d.prepare(`SELECT * FROM items WHERE tenant_id = ? AND id IN (${stored.map(() => '?').join(',')}) AND archived = 0 AND excluded = 0`).all(tid, ...stored) as ItemRow[];
     if (rows.length === stored.length) return stored.map((id) => rows.find((r) => r.id === id)!).filter(Boolean);
   }
-  const picked = computePicks(n, dateKey);
-  if (picked.length) setMeta(key, JSON.stringify(picked.map((p) => p.id)));
+  const picked = computePicks(tid, n, dateKey);
+  if (picked.length) setMeta(tid, key, JSON.stringify(picked.map((p) => p.id)));
   return picked;
 }
 
-function computePicks(n: number, dateKey: string): ItemRow[] {
-  const rows = db().prepare("SELECT * FROM items WHERE analysis_status = 'done' AND archived = 0 AND excluded = 0").all() as ItemRow[];
+function computePicks(tid: number, n: number, dateKey: string): ItemRow[] {
+  const rows = db().prepare("SELECT * FROM items WHERE tenant_id = ? AND analysis_status = 'done' AND archived = 0 AND excluded = 0").all(tid) as ItemRow[];
   if (!rows.length) return [];
-  const rnd = seeded(`resurfly:${dateKey}`);
+  const rnd = seeded(`resurfly:${tid}:${dateKey}`);
   const t = now();
   const scored = rows.map((r) => {
     const a = j<Analysis | null>(r.analysis, null);
@@ -65,28 +65,28 @@ const NOTE_SCHEMA = {
 } as const;
 
 /** Cached per-day "why today" blurbs. */
-export async function resurfaceNotes(items: ItemRow[], dateKey = todayKey()): Promise<Record<string, string>> {
+export async function resurfaceNotes(tid: number, items: ItemRow[], dateKey = todayKey()): Promise<Record<string, string>> {
   const key = `resurface_notes:${dateKey}`;
-  const cached = j<Record<string, string> | null>(getMeta(key), null);
+  const cached = j<Record<string, string> | null>(getMeta(tid, key), null);
   if (cached && items.every((i) => cached[i.id])) return cached;
-  if (!hasOpenAI() || !items.length) return {};
+  if (!hasOpenAI(tid) || !items.length) return {};
   try {
     const desc = items.map((r) => { const a = j<Analysis | null>(r.analysis, null)!; return `[${r.id}] ${a.title} — ${a.one_liner}. Key: ${a.key_points.slice(0, 3).join('; ')}. Nudge: ${a.resurface_prompt}`; }).join('\n');
     const { data } = await generateStructured<{ notes: Array<{ id: string; why_today: string }> }>({
-      model: models().analysis, system: 'You write short, specific, encouraging one-liners. No emojis. No hype.', user: `Today is ${dateKey}. For each save below write "why_today".\n\n${desc}`,
+      tid, model: models(tid).analysis, system: 'You write short, specific, encouraging one-liners. No emojis. No hype.', user: `Today is ${dateKey}. For each save below write "why_today".\n\n${desc}`,
       schemaName: 'resurface_notes', schema: NOTE_SCHEMA as any, maxOutputTokens: 600, effort: 'low',
     });
     const map: Record<string, string> = {};
     for (const n of data.notes) map[n.id] = n.why_today;
-    setMeta(key, JSON.stringify(map));
+    setMeta(tid, key, JSON.stringify(map));
     return map;
   } catch {
     return {};
   }
 }
 
-export function markResurfaced(ids: string[]) {
-  const stmt = db().prepare('UPDATE items SET last_resurfaced_at = ?, resurface_count = resurface_count + 1 WHERE id = ?');
+export function markResurfaced(tid: number, ids: string[]) {
+  const stmt = db().prepare('UPDATE items SET last_resurfaced_at = ?, resurface_count = resurface_count + 1 WHERE id = ? AND tenant_id = ?');
   const t = now();
-  db().transaction(() => { for (const id of ids) stmt.run(t, id); })();
+  db().transaction(() => { for (const id of ids) stmt.run(t, id, tid); })();
 }

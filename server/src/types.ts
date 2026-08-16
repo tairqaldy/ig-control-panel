@@ -81,6 +81,7 @@ export interface Analysis {
 
 export interface ItemRow {
   id: string;
+  tenant_id: number;
   ig_pk: string | null;
   shortcode: string | null;
   url: string;
@@ -138,4 +139,44 @@ export interface ItemRow {
   cost_usd: number;
   created_at: number;
   updated_at: number;
+}
+
+/* ---------------- hosted mode: tenants / users ---------------- */
+
+export type PlanId = 'owner' | 'trial' | 'free' | 'pro' | 'studio';
+export type PlanStatus = 'active' | 'trialing' | 'past_due' | 'paused' | 'canceled';
+
+export interface TenantRow {
+  id: number;
+  name: string | null;
+  plan: PlanId;
+  plan_status: PlanStatus;
+  trial_ends_at: number | null;
+  plan_started_at: number | null;
+  plan_renews_at: number | null;
+  paddle_customer_id: string | null;
+  paddle_subscription_id: string | null;
+  paddle_price_id: string | null;
+  created_at: number;
+  updated_at: number;
+  cancelled_at: number | null;
+  deleted_at: number | null;
+}
+
+export interface UserRow {
+  id: number;
+  tenant_id: number;
+  email: string;
+  password_hash: string | null;
+  is_owner: number;
+  created_at: number;
+  last_login_at: number | null;
+}
+
+/** Session as decoded from the cookie (and attached to the Hono context by `requireAuth`). */
+export interface TenantSession {
+  u: string;
+  tid: number;
+  uid: number;
+  isOwner: boolean;
 }
