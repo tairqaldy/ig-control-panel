@@ -320,8 +320,27 @@ function ensureOwnerUser(d: DB) {
   if (!email) return;
   try {
     const cur = d.prepare('SELECT id, email FROM users WHERE tenant_id = 1 AND is_owner = 1').get() as { id: number; email: string } | undefined;
-    if (!cur) insertOwnerUser(d);
-    else if (cur.email.toLowerCase() !== email) d.prepare('UPDATE users SET email = ? WHERE id = ?').run(email, cur.id);
+    if (!cur) { insertOwnerUser(d); return; }
+    if (cur.email.toLowerCase() === email) return;
+    // APP_USERNAME changed to an email that a hosted signup already uses (the operator signed up with their own address).
+    // If that account is still empty, fold it into the owner workspace: the user row (and its password) becomes the owner
+    // user of tenant 1 and the empty tenant is soft-deleted. If it has data, keep both and say so.
+    const taken = d.prepare('SELECT id, tenant_id FROM users WHERE email = ? COLLATE NOCASE AND id != ?').get(email, cur.id) as { id: number; tenant_id: number } | undefined;
+    if (taken) {
+      const items = (d.prepare('SELECT COUNT(*) AS n FROM items WHERE tenant_id = ?').get(taken.tenant_id) as { n: number }).n;
+      if (taken.tenant_id !== 1 && items > 0) {
+        console.warn(`[db] owner email ${email} belongs to tenant ${taken.tenant_id} which has ${items} saves — not merging; owner login keeps ${cur.email}. Delete that account (Billing → Delete account) to complete the switch.`);
+        return;
+      }
+      d.transaction(() => {
+        d.prepare('DELETE FROM users WHERE id = ?').run(cur.id);
+        d.prepare('UPDATE users SET tenant_id = 1, is_owner = 1 WHERE id = ?').run(taken.id);
+        if (taken.tenant_id !== 1) d.prepare('UPDATE tenants SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL').run(Math.floor(Date.now() / 1000), Math.floor(Date.now() / 1000), taken.tenant_id);
+      })();
+      console.log(`[db] merged hosted account ${email} (tenant ${taken.tenant_id}, empty) into the owner workspace`);
+      return;
+    }
+    d.prepare('UPDATE users SET email = ? WHERE id = ?').run(email, cur.id);
   } catch (e) { console.warn('[db] could not sync owner user', e); }
 }
 
