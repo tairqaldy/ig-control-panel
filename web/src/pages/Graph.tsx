@@ -30,14 +30,16 @@ export default function Graph() {
   const [showAuthors, setShowAuthors] = useState(true);
   const [showSimilar, setShowSimilar] = useState(true);
   const [minTag, setMinTag] = useState(3);
+  const [maxItems, setMaxItems] = useState(600);
   const [category, setCategory] = useState('');
   const [query, setQuery] = useState('');
   const [hover, setHover] = useState<N | null>(null);
   const [focus, setFocus] = useState<N | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const fittedRef = useRef(false);
+  const hoverIdRef = useRef<string | null>(null);
   const facets = useQuery({ queryKey: ['facets'], queryFn: () => api.get<Facets>('/api/facets'), staleTime: 60_000 });
-  const gq = useQuery({ queryKey: ['graph', minTag, category, showSimilar], queryFn: () => api.get<GraphData>(`/api/graph${qs({ min_tag: minTag, category, similar: showSimilar ? 1 : 0, max_items: 2500 })}`), staleTime: 60_000 });
+  const gq = useQuery({ queryKey: ['graph', minTag, category, showSimilar, maxItems], queryFn: () => api.get<GraphData>(`/api/graph${qs({ min_tag: minTag, category, similar: showSimilar ? 1 : 0, max_items: maxItems, tags_per_item: 3, similar_per_item: 2 })}`), staleTime: 60_000 });
 
   useEffect(() => {
     const el = wrapRef.current; if (!el) return;
@@ -166,6 +168,7 @@ export default function Graph() {
         <Toggle checked={showAuthors} onChange={setShowAuthors} label="Creators" />
         <Toggle checked={showSimilar} onChange={setShowSimilar} label="Similarity links" />
         <label className="inline-flex items-center gap-2 text-[13px] text-ink-2">Min tag uses <input type="range" min={1} max={12} value={minTag} onChange={(e) => setMinTag(Number(e.target.value))} className="accent-[var(--accent)]" /><span className="font-mono text-[11px] text-muted w-4">{minTag}</span></label>
+        <label className="inline-flex items-center gap-2 text-[13px] text-ink-2" title="Most recent saves shown. Fewer = smoother.">Saves <input type="range" min={100} max={3000} step={100} value={maxItems} onChange={(e) => setMaxItems(Number(e.target.value))} className="accent-[var(--accent)]" /><span className="font-mono text-[11px] text-muted w-9">{maxItems}</span></label>
         {focus && <button onClick={() => setFocus(null)} className="btn btn-sm chip-active border-accent"><Focus size={13} /> Focus: {focus.label} <X size={12} /></button>}
       </div>
       <div ref={wrapRef} className="relative flex-1 min-h-[420px] overflow-hidden rounded-2xl border border-line bg-surface" style={{ boxShadow: 'var(--shadow)' }}>
@@ -182,16 +185,16 @@ export default function Graph() {
             nodePointerAreaPaint={(node: any, color, ctx) => { const r = (node.__r || 4) + 2; ctx.fillStyle = color; ctx.beginPath(); ctx.arc(node.x, node.y, r, 0, Math.PI * 2); ctx.fill(); }}
             linkColor={(l: any) => { const s = typeof l.source === 'object' ? l.source.id : l.source; const t = typeof l.target === 'object' ? l.target.id : l.target; const active = activeSet ? activeSet.has(s) && activeSet.has(t) : true; const a = active ? (l.kind === 'similar' ? 0.35 : l.kind === 'category' ? 0.10 : 0.22) : 0.03; return dark ? `rgba(237,234,226,${a})` : `rgba(23,22,26,${a})`; }}
             linkWidth={(l: any) => (l.kind === 'similar' ? 1.2 : 0.6)}
-            linkDirectionalParticles={(l: any) => (l.kind === 'similar' && activeSet ? 1 : 0)}
+            linkDirectionalParticles={(l: any) => { if (l.kind !== 'similar' || !activeSet) return 0; const s = typeof l.source === 'object' ? l.source.id : l.source; const t = typeof l.target === 'object' ? l.target.id : l.target; return activeSet.has(s) && activeSet.has(t) ? 1 : 0; }}
             linkDirectionalParticleWidth={1.6}
-            onNodeHover={(n: any) => { setHover(n || null); if (wrapRef.current) wrapRef.current.style.cursor = n ? 'pointer' : 'grab'; }}
+            onNodeHover={(n: any) => { if ((n?.id || null) !== (hoverIdRef.current || null)) { hoverIdRef.current = n?.id || null; setHover(n || null); } if (wrapRef.current) wrapRef.current.style.cursor = n ? 'pointer' : 'grab'; }}
             onNodeClick={onNodeClick as any}
             onBackgroundClick={() => setFocus(null)}
             onEngineStop={() => { if (!fittedRef.current) { fittedRef.current = true; fgRef.current?.zoomToFit(500, 30); } }}
-            cooldownTicks={220}
-            warmupTicks={40}
-            d3AlphaDecay={0.028}
-            d3VelocityDecay={0.34}
+            cooldownTicks={140}
+            warmupTicks={60}
+            d3AlphaDecay={0.045}
+            d3VelocityDecay={0.4}
             enableNodeDrag
           />
         )}

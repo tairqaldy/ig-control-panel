@@ -40,7 +40,7 @@ export async function retrieve(question: string, limit = 12): Promise<AskSource[
   const fused = rrf([sem, kw]);
   const ids = Array.from(fused.entries()).sort((a, b) => b[1] - a[1]).slice(0, limit).map(([id]) => id);
   if (!ids.length) return [];
-  const rows = db().prepare(`SELECT * FROM items WHERE id IN (${ids.map(() => '?').join(',')}) AND archived = 0`).all(...ids) as ItemRow[];
+  const rows = db().prepare(`SELECT * FROM items WHERE id IN (${ids.map(() => '?').join(',')}) AND archived = 0 AND excluded = 0`).all(...ids) as ItemRow[];
   const byId = new Map(rows.map((r) => [r.id, r]));
   return ids.filter((id) => byId.has(id)).map((id) => {
     const r = byId.get(id)!;
@@ -85,7 +85,7 @@ export function buildContext(sources: AskSource[]): string {
 
 export async function* askStream(question: string, history: Array<{ role: 'user' | 'assistant'; content: string }>, sources: AskSource[]): AsyncGenerator<string> {
   const context = buildContext(sources);
-  const total = (db().prepare("SELECT COUNT(*) AS n FROM items WHERE analysis_status = 'done' AND archived = 0").get() as any).n;
+  const total = (db().prepare("SELECT COUNT(*) AS n FROM items WHERE analysis_status = 'done' AND archived = 0 AND excluded = 0").get() as any).n;
   const userMsg = `## Library context (${sources.length} most relevant of ${total} analyzed saves)\n\n${context || '(nothing relevant found)'}\n\n## Question\n${question}`;
   const messages = [...history.slice(-6), { role: 'user' as const, content: userMsg }];
   yield* streamText({ model: models().ask, system: ASK_SYSTEM, messages, effort: 'low', maxOutputTokens: 1800 });

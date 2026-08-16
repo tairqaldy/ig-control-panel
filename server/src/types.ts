@@ -131,6 +131,11 @@ export interface ItemRow {
   user_tags: string | null;
   last_resurfaced_at: number | null;
   resurface_count: number;
+  excluded: number;
+  exclude_reason: string | null;
+  saved_at_est: number | null;
+  usage: string | null;
+  cost_usd: number;
   created_at: number;
   updated_at: number;
 }

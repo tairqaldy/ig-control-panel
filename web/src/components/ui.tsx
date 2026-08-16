@@ -1,7 +1,58 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { X } from 'lucide-react';
 import { cn } from '../lib/utils';
+
+/**
+ * Popover rendered in a portal at document.body, positioned from the anchor's rect.
+ * (A plain absolute/fixed menu inside a container with backdrop-filter/transform gets clipped and its
+ * "click outside" overlay collapses to that container — this avoids all of that.)
+ */
+export function Popover({ anchor, open, onClose, children, width = 224, align = 'start' }: { anchor: HTMLElement | null; open: boolean; onClose: () => void; children: ReactNode; width?: number; align?: 'start' | 'end' }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; maxH: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!open || !anchor) return;
+    const place = () => {
+      const r = anchor.getBoundingClientRect();
+      const vw = window.innerWidth, vh = window.innerHeight;
+      let left = align === 'end' ? r.right - width : r.left;
+      left = Math.max(8, Math.min(left, vw - width - 8));
+      const below = vh - r.bottom - 12;
+      const above = r.top - 12;
+      const openUp = below < 220 && above > below;
+      const maxH = Math.max(160, Math.min(360, openUp ? above : below));
+      const top = openUp ? Math.max(8, r.top - 6 - maxH) : r.bottom + 6;
+      setPos({ top, left, maxH });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
+  }, [open, anchor, width, align]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { const t = e.target as Node; if (ref.current?.contains(t) || anchor?.contains(t)) return; onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [open, onClose, anchor]);
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <AnimatePresence>
+      {open && pos && (
+        <motion.div ref={ref} initial={{ opacity: 0, y: -4, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -4, scale: 0.98 }} transition={{ duration: 0.12 }}
+          style={{ position: 'fixed', top: pos.top, left: pos.left, width, maxHeight: pos.maxH, zIndex: 100, boxShadow: 'var(--shadow-lg)' }}
+          className="overflow-y-auto rounded-xl border border-line bg-surface p-1">
+          {children}
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body,
+  );
+}
 
 export function Logo({ size = 22, className }: { size?: number; className?: string }) {
   return (

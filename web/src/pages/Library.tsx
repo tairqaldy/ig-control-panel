@@ -3,12 +3,12 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { useSearchParams } from 'react-router';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { Search, X, LayoutGrid, List, Download, ChevronDown, Heart, Sparkles, Filter, RefreshCw, Archive, Trash2, Tag, CheckSquare, Square, Brain } from 'lucide-react';
+import { Search, X, LayoutGrid, List, Download, ChevronDown, Heart, Sparkles, Filter, RefreshCw, Archive, Trash2, Tag, CheckSquare, Square, Brain, EyeOff, Eye } from 'lucide-react';
 import { api, qs } from '../lib/api';
 import type { Facets, ItemsResponse } from '../lib/types';
 import { cn, CONTENT_TYPE_LABEL } from '../lib/utils';
 import { ItemCard } from '../components/ItemCard';
-import { PageHeader, Empty, Skeleton, useDebounced, useInfiniteScroll, CategoryDot } from '../components/ui';
+import { PageHeader, Empty, Skeleton, useDebounced, useInfiniteScroll, CategoryDot, Popover } from '../components/ui';
 
 const SORTS = [
   { id: 'saved', label: 'Recently saved' },
@@ -20,32 +20,29 @@ const SORTS = [
   { id: 'random', label: 'Surprise me' },
 ];
 
+const WIDTHS: Record<string, number> = { 'w-40': 160, 'w-44': 176, 'w-48': 192, 'w-52': 208, 'w-56': 224, 'w-60': 240, 'w-64': 256 };
 function Dropdown({ label, value, options, onChange, icon, width = 'w-56' }: { label: string; value: string; options: Array<{ id: string; label: string; n?: number }>; onChange: (v: string) => void; icon?: React.ReactNode; width?: string }) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
+  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const current = options.find((o) => o.id === value);
   const filtered = filter ? options.filter((o) => o.label.toLowerCase().includes(filter.toLowerCase())) : options;
+  const close = useCallback(() => { setOpen(false); setFilter(''); }, []);
   return (
-    <div className="relative">
-      <button onClick={() => setOpen((o) => !o)} className={cn('btn btn-sm', value && 'chip-active border-accent')}>{icon}{current ? current.label : label}<ChevronDown size={13} className="text-muted" /></button>
-      <AnimatePresence>
-        {open && (
-          <>
-            <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-            <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.12 }} className={cn('absolute z-40 mt-1.5 max-h-80 overflow-y-auto rounded-xl border border-line bg-surface p-1', width)} style={{ boxShadow: 'var(--shadow-lg)' }}>
-              {options.length > 8 && <input autoFocus value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter…" className="input !py-1.5 mb-1 !rounded-lg" />}
-              <button onClick={() => { onChange(''); setOpen(false); }} className={cn('flex w-full items-center rounded-lg px-2.5 py-1.5 text-left text-[13px] hover:bg-surface-2', !value && 'text-accent')}>All</button>
-              {filtered.map((o) => (
-                <button key={o.id} onClick={() => { onChange(o.id); setOpen(false); }} className={cn('flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] hover:bg-surface-2', value === o.id && 'text-accent')}>
-                  <span className="truncate flex-1">{o.label}</span>{o.n !== undefined && <span className="font-mono text-[11px] text-muted">{o.n}</span>}
-                </button>
-              ))}
-              {filtered.length === 0 && <div className="px-2.5 py-2 text-[12px] text-muted">No matches</div>}
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-    </div>
+    <>
+      <button ref={setAnchor} onClick={() => setOpen((o) => !o)} aria-expanded={open} className={cn('btn btn-sm', value && 'chip-active border-accent')}>{icon}{current ? current.label : label}<ChevronDown size={13} className={cn('text-muted transition-transform', open && 'rotate-180')} /></button>
+      <Popover anchor={anchor} open={open} onClose={close} width={WIDTHS[width] || 224}>
+        {options.length > 8 && <input autoFocus value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter…" className="input !py-1.5 mb-1 !rounded-lg" />}
+        <button onClick={() => { onChange(''); close(); }} className={cn('flex w-full items-center rounded-lg px-2.5 py-1.5 text-left text-[13px] hover:bg-surface-2', !value && 'text-accent')}>All</button>
+        {filtered.slice(0, 300).map((o) => (
+          <button key={o.id} onClick={() => { onChange(o.id); close(); }} className={cn('flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] hover:bg-surface-2', value === o.id && 'text-accent')}>
+            <span className="truncate flex-1">{o.label}</span>{o.n !== undefined && <span className="font-mono text-[11px] text-muted">{o.n}</span>}
+          </button>
+        ))}
+        {filtered.length === 0 && <div className="px-2.5 py-2 text-[12px] text-muted">No matches</div>}
+        {filtered.length > 300 && <div className="px-2.5 py-2 text-[11px] text-muted">{filtered.length - 300} more — type to filter</div>}
+      </Popover>
+    </>
   );
 }
 
@@ -67,7 +64,7 @@ export default function Library() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [semantic, setSemantic] = useState(true);
 
-  const params = { q: get('q'), category: get('category'), tag: get('tag'), author: get('author'), type: get('type'), status: get('status'), collection: get('collection'), content_type: get('content_type'), sort: get('sort') || 'saved', favorite: get('favorite'), evergreen: get('evergreen'), min_useful: get('min_useful'), archived: get('archived'), semantic: semantic ? '1' : '' };
+  const params = { q: get('q'), category: get('category'), tag: get('tag'), author: get('author'), type: get('type'), status: get('status'), collection: get('collection'), content_type: get('content_type'), sort: get('sort') || 'saved', favorite: get('favorite'), evergreen: get('evergreen'), min_useful: get('min_useful'), archived: get('archived'), excluded: get('excluded'), semantic: semantic ? '1' : '' };
   const isRandom = params.sort === 'random';
   const query = useInfiniteQuery({
     queryKey: ['items', params],
@@ -86,7 +83,7 @@ export default function Library() {
   const loadMore = useCallback(() => { if (query.hasNextPage && !query.isFetchingNextPage) query.fetchNextPage(); }, [query]);
   const sentinel = useInfiniteScroll(loadMore, !!query.hasNextPage);
 
-  const activeFilters = ['category', 'tag', 'author', 'type', 'status', 'collection', 'content_type', 'favorite', 'evergreen', 'min_useful', 'archived'].filter((k) => get(k));
+  const activeFilters = ['category', 'tag', 'author', 'type', 'status', 'collection', 'content_type', 'favorite', 'evergreen', 'min_useful', 'archived', 'excluded'].filter((k) => get(k));
   const clearAll = () => { setSp(new URLSearchParams(get('q') ? { q: get('q') } : {}), { replace: true }); };
 
   const onSelect = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -142,6 +139,7 @@ export default function Library() {
           <button onClick={() => set({ favorite: get('favorite') ? '' : '1' })} className={cn('btn btn-sm', get('favorite') && 'chip-active border-accent')}><Heart size={13} className={cn(get('favorite') && 'fill-current')} /> Favorites</button>
           <button onClick={() => set({ evergreen: get('evergreen') ? '' : '1' })} className={cn('btn btn-sm', get('evergreen') && 'chip-active border-accent')}><Sparkles size={13} /> Evergreen</button>
           <Dropdown label="Sort" value={get('sort') || 'saved'} options={SORTS} onChange={(v) => set({ sort: v })} width="w-48" />
+          <button onClick={() => set({ excluded: get('excluded') ? '' : '1', archived: '' })} className={cn('btn btn-sm', get('excluded') && 'chip-active border-accent')} title="Saves you excluded from the system (never analyzed, hidden everywhere)"><EyeOff size={13} /> Excluded</button>
           {activeFilters.length > 0 && <button onClick={clearAll} className="btn btn-ghost btn-sm text-muted"><X size={13} /> Clear</button>}
         </div>
       </div>
@@ -155,6 +153,11 @@ export default function Library() {
             <button onClick={() => bulk.mutate({ action: 'reanalyze' })} className="btn btn-sm"><RefreshCw size={13} /> Re-analyze</button>
             <button onClick={() => { const t = prompt('Tag to add:'); if (t) bulk.mutate({ action: 'add_tag', tag: t }); }} className="btn btn-sm"><Tag size={13} /> Tag</button>
             <a href={exportUrl('json')} className="btn btn-sm"><Download size={13} /> Export</a>
+            {get('excluded') ? (
+              <button onClick={() => bulk.mutate({ action: 'include' })} className="btn btn-sm"><Eye size={13} /> Include again</button>
+            ) : (
+              <button onClick={() => bulk.mutate({ action: 'exclude' })} className="btn btn-sm" title="Exclude from Resurface: never analyzed, hidden from library/search/graph. Undo from the Excluded filter."><EyeOff size={13} /> Exclude</button>
+            )}
             <button onClick={() => bulk.mutate({ action: get('archived') ? 'unarchive' : 'archive' })} className="btn btn-sm"><Archive size={13} /> {get('archived') ? 'Restore' : 'Archive'}</button>
             <button onClick={() => { if (confirm(`Delete ${selected.size} saves from Resurface?`)) bulk.mutate({ action: 'delete' }); }} className="btn btn-sm btn-danger"><Trash2 size={13} /></button>
             <button onClick={() => setSelected(new Set())} className="btn btn-ghost btn-sm"><X size={13} /></button>

@@ -11,6 +11,7 @@ import { hasOpenAI } from '../services/openai.js';
 import { CATEGORIES } from '../prompts/analysis.js';
 import { rebuildAllNeighbors } from '../services/neighbors.js';
 import { reindexAll } from '../services/search.js';
+import { budgetExhausted, getScope, recomputeSavedAtEst, resetBudget, scopeReport, scopeWhereSql, setScope, type Scope } from '../services/scope.js';
 
 export const misc = new Hono();
 
@@ -29,40 +30,55 @@ misc.get('/stats', (c) => {
       SUM(CASE WHEN favorite = 1 THEN 1 ELSE 0 END) AS favorites,
       SUM(COALESCE(duration, 0)) AS total_seconds,
       COUNT(DISTINCT author_username) AS authors
-    FROM items WHERE archived = 0`).get() as any;
-  const categories = d.prepare(`SELECT json_extract(analysis, '$.category') AS name, COUNT(*) AS n FROM items WHERE archived = 0 AND analysis_status = 'done' GROUP BY name ORDER BY n DESC`).all();
-  const tags = d.prepare(`SELECT t.tag AS name, COUNT(*) AS n FROM item_tags t JOIN items i ON i.id = t.item_id WHERE i.archived = 0 GROUP BY t.tag ORDER BY n DESC LIMIT 40`).all();
-  const authors = d.prepare(`SELECT author_username AS name, author_name AS full_name, COUNT(*) AS n FROM items WHERE archived = 0 AND author_username IS NOT NULL GROUP BY author_username ORDER BY n DESC LIMIT 20`).all();
-  const contentTypes = d.prepare(`SELECT json_extract(analysis, '$.content_type') AS name, COUNT(*) AS n FROM items WHERE archived = 0 AND analysis_status = 'done' GROUP BY name ORDER BY n DESC`).all();
-  const actions = d.prepare(`SELECT json_extract(analysis, '$.action_type') AS name, COUNT(*) AS n FROM items WHERE archived = 0 AND analysis_status = 'done' GROUP BY name ORDER BY n DESC`).all();
-  const timeline = d.prepare(`SELECT strftime('%Y-%m', datetime(COALESCE(saved_at, taken_at), 'unixepoch')) AS month, COUNT(*) AS n FROM items WHERE archived = 0 AND COALESCE(saved_at, taken_at) IS NOT NULL GROUP BY month ORDER BY month ASC`).all();
-  const usefulness = d.prepare(`SELECT CAST(json_extract(analysis, '$.usefulness_score') AS INTEGER) AS score, COUNT(*) AS n FROM items WHERE archived = 0 AND analysis_status = 'done' GROUP BY score ORDER BY score`).all();
-  const languages = d.prepare(`SELECT json_extract(analysis, '$.language') AS name, COUNT(*) AS n FROM items WHERE archived = 0 AND analysis_status = 'done' GROUP BY name ORDER BY n DESC LIMIT 8`).all();
-  const evergreen = (d.prepare(`SELECT COUNT(*) AS n FROM items WHERE archived = 0 AND json_extract(analysis, '$.is_evergreen') = 1`).get() as any).n;
+    FROM items WHERE archived = 0 AND excluded = 0`).get() as any;
+  const categories = d.prepare(`SELECT json_extract(analysis, '$.category') AS name, COUNT(*) AS n FROM items WHERE archived = 0 AND excluded = 0 AND analysis_status = 'done' GROUP BY name ORDER BY n DESC`).all();
+  const tags = d.prepare(`SELECT t.tag AS name, COUNT(*) AS n FROM item_tags t JOIN items i ON i.id = t.item_id WHERE i.archived = 0 AND i.excluded = 0 GROUP BY t.tag ORDER BY n DESC LIMIT 40`).all();
+  const authors = d.prepare(`SELECT author_username AS name, author_name AS full_name, COUNT(*) AS n FROM items WHERE archived = 0 AND excluded = 0 AND author_username IS NOT NULL GROUP BY author_username ORDER BY n DESC LIMIT 20`).all();
+  const contentTypes = d.prepare(`SELECT json_extract(analysis, '$.content_type') AS name, COUNT(*) AS n FROM items WHERE archived = 0 AND excluded = 0 AND analysis_status = 'done' GROUP BY name ORDER BY n DESC`).all();
+  const actions = d.prepare(`SELECT json_extract(analysis, '$.action_type') AS name, COUNT(*) AS n FROM items WHERE archived = 0 AND excluded = 0 AND analysis_status = 'done' GROUP BY name ORDER BY n DESC`).all();
+  const timeline = d.prepare(`SELECT strftime('%Y-%m', datetime(COALESCE(saved_at, taken_at), 'unixepoch')) AS month, COUNT(*) AS n FROM items WHERE archived = 0 AND excluded = 0 AND COALESCE(saved_at, taken_at) IS NOT NULL GROUP BY month ORDER BY month ASC`).all();
+  const usefulness = d.prepare(`SELECT CAST(json_extract(analysis, '$.usefulness_score') AS INTEGER) AS score, COUNT(*) AS n FROM items WHERE archived = 0 AND excluded = 0 AND analysis_status = 'done' GROUP BY score ORDER BY score`).all();
+  const languages = d.prepare(`SELECT json_extract(analysis, '$.language') AS name, COUNT(*) AS n FROM items WHERE archived = 0 AND excluded = 0 AND analysis_status = 'done' GROUP BY name ORDER BY n DESC LIMIT 8`).all();
+  const evergreen = (d.prepare(`SELECT COUNT(*) AS n FROM items WHERE archived = 0 AND excluded = 0 AND json_extract(analysis, '$.is_evergreen') = 1`).get() as any).n;
   const lastImport = d.prepare('SELECT * FROM imports ORDER BY id DESC LIMIT 1').get();
   return c.json({ totals: { ...totals, evergreen }, categories, tags, authors, contentTypes, actions, timeline, usefulness, languages, worker: worker.status(), lastImport, igUsername: getMeta('ig_username') });
 });
 
 misc.get('/facets', (c) => {
   const d = db();
-  const tags = d.prepare(`SELECT t.tag AS name, COUNT(*) AS n FROM item_tags t JOIN items i ON i.id = t.item_id WHERE i.archived = 0 GROUP BY t.tag HAVING n >= 1 ORDER BY n DESC, t.tag ASC LIMIT 600`).all();
-  const authors = d.prepare(`SELECT author_username AS name, author_name AS full_name, COUNT(*) AS n FROM items WHERE archived = 0 AND author_username IS NOT NULL GROUP BY author_username ORDER BY n DESC LIMIT 400`).all();
-  const categories = d.prepare(`SELECT json_extract(analysis, '$.category') AS name, COUNT(*) AS n FROM items WHERE archived = 0 AND analysis_status = 'done' GROUP BY name ORDER BY n DESC`).all();
-  const collections = d.prepare(`SELECT je.value AS name, COUNT(*) AS n FROM items i, json_each(i.collections) je WHERE i.archived = 0 GROUP BY je.value ORDER BY n DESC`).all();
-  const contentTypes = d.prepare(`SELECT json_extract(analysis, '$.content_type') AS name, COUNT(*) AS n FROM items WHERE archived = 0 AND analysis_status = 'done' GROUP BY name ORDER BY n DESC`).all();
+  const tags = d.prepare(`SELECT t.tag AS name, COUNT(*) AS n FROM item_tags t JOIN items i ON i.id = t.item_id WHERE i.archived = 0 AND i.excluded = 0 GROUP BY t.tag HAVING n >= 1 ORDER BY n DESC, t.tag ASC LIMIT 600`).all();
+  const authors = d.prepare(`SELECT author_username AS name, author_name AS full_name, COUNT(*) AS n FROM items WHERE archived = 0 AND excluded = 0 AND author_username IS NOT NULL GROUP BY author_username ORDER BY n DESC LIMIT 400`).all();
+  const categories = d.prepare(`SELECT json_extract(analysis, '$.category') AS name, COUNT(*) AS n FROM items WHERE archived = 0 AND excluded = 0 AND analysis_status = 'done' GROUP BY name ORDER BY n DESC`).all();
+  const collections = d.prepare(`SELECT je.value AS name, COUNT(*) AS n FROM items i, json_each(i.collections) je WHERE i.archived = 0 AND i.excluded = 0 GROUP BY je.value ORDER BY n DESC`).all();
+  const contentTypes = d.prepare(`SELECT json_extract(analysis, '$.content_type') AS name, COUNT(*) AS n FROM items WHERE archived = 0 AND excluded = 0 AND analysis_status = 'done' GROUP BY name ORDER BY n DESC`).all();
   return c.json({ tags, authors, categories, collections, contentTypes, allCategories: CATEGORIES });
 });
 
 /* ---------------- jobs ---------------- */
 misc.get('/jobs/status', (c) => c.json(worker.status()));
-misc.post('/jobs/pause', (c) => { worker.paused = true; return c.json(worker.status()); });
+misc.post('/jobs/pause', (c) => { worker.pauseFor('manual'); return c.json(worker.status()); });
 misc.post('/jobs/resume', (c) => { worker.paused = false; return c.json(worker.status()); });
 misc.post('/jobs/queue', async (c) => {
-  const body = await c.req.json<{ what?: 'pending' | 'failed' | 'all'; ids?: string[]; force?: boolean }>().catch(() => ({}) as any);
-  const n = body.ids?.length ? worker.enqueue(body.ids, { force: !!body.force }) : worker.enqueue(body.what || 'pending');
+  const body = await c.req.json<{ what?: 'pending' | 'failed' | 'all' | 'eligible'; ids?: string[]; force?: boolean }>().catch(() => ({}) as any);
+  const n = body.ids?.length ? worker.enqueue(body.ids, { force: !!body.force }) : worker.enqueue(body.what || 'eligible');
   worker.kick();
   return c.json({ ...worker.status(), justQueued: n });
 });
+misc.post('/jobs/reset-quota-failures', (c) => c.json({ reset: worker.resetQuotaFailures(), ...worker.status() }));
+
+/* ---------------- analysis scope + cost ---------------- */
+misc.get('/scope', (c) => c.json(scopeReport()));
+misc.put('/scope', async (c) => {
+  const body = await c.req.json<Partial<Scope> & { resetBudget?: boolean }>();
+  setScope(body);
+  if (body.resetBudget) resetBudget();
+  // Scope change → drop queued items that are no longer eligible so money isn't spent on them.
+  const w = scopeWhereSql(getScope());
+  db().prepare(`UPDATE items SET queue_state = 'idle' WHERE queue_state = 'queued' AND NOT (${w.sql})`).run(...w.params);
+  if (worker.pauseReason === 'budget' && !budgetExhausted()) worker.paused = false;
+  return c.json(scopeReport());
+});
+misc.post('/scope/recompute-dates', (c) => c.json({ updated: recomputeSavedAtEst(), ...scopeReport() }));
 misc.post('/jobs/clear', (c) => c.json({ cleared: worker.dequeueAll(), ...worker.status() }));
 misc.post('/jobs/concurrency', async (c) => { const b = await c.req.json<{ concurrency: number }>(); worker.concurrency = b.concurrency; return c.json(worker.status()); });
 misc.post('/jobs/reindex', (c) => c.json({ indexed: reindexAll(), neighbors: rebuildAllNeighbors() }));
@@ -74,7 +90,7 @@ function selectForExport(c: any): ItemRow[] {
   const tag = c.req.query('tag');
   const onlyAnalyzed = c.req.query('analyzed') === '1';
   const favorite = c.req.query('favorite') === '1';
-  const where: string[] = ['archived = 0'];
+  const where: string[] = ['archived = 0', 'excluded = 0'];
   const params: unknown[] = [];
   if (ids) { const list = String(ids).split(',').filter(Boolean).slice(0, 5000); where.push(`id IN (${list.map(() => '?').join(',')})`); params.push(...list); }
   if (category) { where.push("json_extract(analysis, '$.category') = ?"); params.push(category); }
@@ -146,12 +162,17 @@ misc.get('/resurface/random', (c) => {
 /* ---------------- graph ---------------- */
 misc.get('/graph', (c) => {
   const d = db();
-  const maxItems = Math.min(6000, Number(c.req.query('max_items') || 1500));
-  const minTag = Math.max(1, Number(c.req.query('min_tag') || 2));
-  const minAuthor = Math.max(1, Number(c.req.query('min_author') || 2));
-  const includeSimilar = c.req.query('similar') !== '0';
+  // Defaults are tuned so a 1,500-save library yields ~5k links (smooth), not 15k+ (freezes).
+  const maxItems = Math.min(6000, Number(c.req.query('max_items') || 800));
+  const minTag = Math.max(1, Number(c.req.query('min_tag') || 3));
+  const minAuthor = Math.max(1, Number(c.req.query('min_author') || 3));
+  const tagsPerItem = Math.max(1, Math.min(10, Number(c.req.query('tags_per_item') || 3)));
+  const similarPerItem = Math.max(0, Math.min(8, Number(c.req.query('similar_per_item') || 2)));
+  const similarMin = Math.min(0.99, Math.max(0.3, Number(c.req.query('similar_min') || 0.7)));
+  const includeSimilar = c.req.query('similar') !== '0' && similarPerItem > 0;
+  const includeCategoryHubs = c.req.query('category_hubs') !== '0';
   const category = c.req.query('category') || '';
-  const where = ["archived = 0", "analysis_status = 'done'"];
+  const where = ["archived = 0", "excluded = 0", "analysis_status = 'done'"];
   const params: unknown[] = [];
   if (category) { where.push("json_extract(analysis, '$.category') = ?"); params.push(category); }
   const rows = d.prepare(`SELECT id, author_username, thumb_path, analysis, like_count, play_count FROM items WHERE ${where.join(' AND ')} ORDER BY CASE WHEN saved_rank IS NULL THEN 1 ELSE 0 END, saved_rank ASC LIMIT ?`).all(...params, maxItems) as any[];
@@ -168,28 +189,39 @@ misc.get('/graph', (c) => {
     if (r.author_username) authorCount.set(r.author_username, (authorCount.get(r.author_username) || 0) + 1);
     catCount.set(r.a.category, (catCount.get(r.a.category) || 0) + 1);
   }
-  const keepTags = new Set(Array.from(tagCount.entries()).filter(([, n]) => n >= minTag).sort((a, b) => b[1] - a[1]).slice(0, 400).map(([t]) => t));
-  const keepAuthors = new Set(Array.from(authorCount.entries()).filter(([, n]) => n >= minAuthor).slice(0, 300).map(([a]) => a));
-  for (const [cat, n] of catCount) nodes.push({ id: `cat:${cat}`, type: 'category', label: cat, count: n });
-  for (const t of keepTags) nodes.push({ id: `tag:${t}`, type: 'tag', label: t, count: tagCount.get(t) });
-  for (const a of keepAuthors) nodes.push({ id: `author:${a}`, type: 'author', label: `@${a}`, count: authorCount.get(a) });
+  const keepTags = new Set(Array.from(tagCount.entries()).filter(([, n]) => n >= minTag).sort((a, b) => b[1] - a[1]).slice(0, 250).map(([t]) => t));
+  const keepAuthors = new Set(Array.from(authorCount.entries()).filter(([, n]) => n >= minAuthor).slice(0, 150).map(([a]) => a));
+  const usedTags = new Set<string>();
+  const usedAuthors = new Set<string>();
+  const itemNodes: any[] = [];
   for (const r of parsed) {
     if (!r.a) continue;
-    nodes.push({ id: r.id, type: 'item', label: r.a.title, category: r.a.category, thumb: r.thumb_path ? `/media/${r.thumb_path}` : null, useful: r.a.usefulness_score, author: r.author_username, tags: r.a.tags });
-    links.push({ source: r.id, target: `cat:${r.a.category}`, kind: 'category' });
-    for (const t of r.a.tags) if (keepTags.has(t)) links.push({ source: r.id, target: `tag:${t}`, kind: 'tag' });
-    if (r.author_username && keepAuthors.has(r.author_username)) links.push({ source: r.id, target: `author:${r.author_username}`, kind: 'author' });
+    itemNodes.push({ id: r.id, type: 'item', label: r.a.title, category: r.a.category, thumb: r.thumb_path ? `/media/${r.thumb_path}` : null, useful: r.a.usefulness_score, author: r.author_username, tags: r.a.tags });
+    if (includeCategoryHubs) links.push({ source: r.id, target: `cat:${r.a.category}`, kind: 'category' });
+    // only the item's N most-shared tags → clusters form around real themes, link count stays sane
+    const tagsSorted = (r.a.tags as string[]).filter((t: string) => keepTags.has(t)).sort((x: string, y: string) => (tagCount.get(y) || 0) - (tagCount.get(x) || 0)).slice(0, tagsPerItem);
+    for (const t of tagsSorted) { links.push({ source: r.id, target: `tag:${t}`, kind: 'tag' }); usedTags.add(t); }
+    if (r.author_username && keepAuthors.has(r.author_username)) { links.push({ source: r.id, target: `author:${r.author_username}`, kind: 'author' }); usedAuthors.add(r.author_username); }
   }
+  if (includeCategoryHubs) for (const [cat, n] of catCount) nodes.push({ id: `cat:${cat}`, type: 'category', label: cat, count: n });
+  for (const t of usedTags) nodes.push({ id: `tag:${t}`, type: 'tag', label: t, count: tagCount.get(t) });
+  for (const a of usedAuthors) nodes.push({ id: `author:${a}`, type: 'author', label: `@${a}`, count: authorCount.get(a) });
+  nodes.push(...itemNodes);
   if (includeSimilar) {
-    const nb = d.prepare('SELECT item_id, neighbor_id, score FROM item_neighbors WHERE score >= 0.62').all() as Array<{ item_id: string; neighbor_id: string; score: number }>;
+    // top-N strongest neighbors per item, undirected, above the threshold
+    const nb = d.prepare('SELECT item_id, neighbor_id, score FROM item_neighbors WHERE score >= ? ORDER BY item_id, score DESC').all(similarMin) as Array<{ item_id: string; neighbor_id: string; score: number }>;
     const seen = new Set<string>();
+    const perItem = new Map<string, number>();
     for (const e of nb) {
       if (!ids.has(e.item_id) || !ids.has(e.neighbor_id)) continue;
+      const c1 = perItem.get(e.item_id) || 0;
+      if (c1 >= similarPerItem) continue;
       const key = e.item_id < e.neighbor_id ? `${e.item_id}|${e.neighbor_id}` : `${e.neighbor_id}|${e.item_id}`;
       if (seen.has(key)) continue;
       seen.add(key);
+      perItem.set(e.item_id, c1 + 1);
       links.push({ source: e.item_id, target: e.neighbor_id, kind: 'similar', score: e.score });
     }
   }
-  return c.json({ nodes, links, meta: { items: parsed.length, tags: keepTags.size, authors: keepAuthors.size, categories: catCount.size } });
+  return c.json({ nodes, links, meta: { items: parsed.length, tags: usedTags.size, authors: usedAuthors.size, categories: includeCategoryHubs ? catCount.size : 0, links: links.length } });
 });

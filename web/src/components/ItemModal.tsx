@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, ExternalLink, Heart, RefreshCw, Trash2, Copy, Archive, ChevronDown, ChevronUp, Sparkles, Quote, ListChecks, Tag, Users, Music2, MapPin, Eye, Play, Images, FileText, Wand2, MessageSquareText, Save, Loader2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Heart, RefreshCw, Trash2, Copy, Archive, ChevronDown, ChevronUp, Sparkles, Quote, ListChecks, Tag, Users, Music2, MapPin, Eye, EyeOff, UserX, Play, Images, FileText, Wand2, MessageSquareText, Save, Loader2, AlertCircle } from 'lucide-react';
 import { api } from '../lib/api';
 import type { ItemFull, ItemLight } from '../lib/types';
 import { useItemModal } from '../lib/store';
@@ -68,6 +68,7 @@ export function ItemModal() {
   const patch = useMutation({ mutationFn: (body: Record<string, unknown>) => api.patch(`/api/items/${id}`, body), onSuccess: invalidate });
   const reanalyze = useMutation({ mutationFn: (media: boolean) => api.post(`/api/items/${id}/reanalyze`, { media }), onSuccess: () => { toast.success('Queued for re-analysis'); invalidate(); qc.invalidateQueries({ queryKey: ['jobs-status'] }); } });
   const del = useMutation({ mutationFn: () => api.del(`/api/items/${id}`), onSuccess: () => { toast.success('Deleted'); modal.close(); invalidate(); } });
+  const excludeAuthor = useMutation({ mutationFn: (author: string) => api.post<{ n: number }>('/api/items/exclude-author', { author }), onSuccess: (r) => { toast.success(`Excluded ${r.n} saves by that creator`); modal.close(); invalidate(); qc.invalidateQueries({ queryKey: ['scope'] }); } });
 
   const images = useMemo(() => (item ? (item.frames.length ? item.frames : item.thumb ? [item.thumb] : []) : []), [item]);
   const a = item?.analysis || null;
@@ -82,9 +83,9 @@ export function ItemModal() {
           <div className="space-y-3"><Skeleton className="h-8 w-3/4" /><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-5/6" /><Skeleton className="h-24 w-full" /><Skeleton className="h-40 w-full" /></div>
         </div>
       ) : (
-        <div className="grid md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)] max-h-[calc(100vh-3rem)]">
-          {/* Media column */}
-          <div className="md:sticky md:top-0 md:self-start p-4 md:p-5 md:border-r border-line bg-bg-2/40 rounded-l-2xl">
+        <div className="grid md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)] md:h-[calc(100vh-3rem)] md:max-h-[calc(100vh-3rem)] md:overflow-hidden rounded-2xl">
+          {/* Media column — scrolls on its own on desktop so the action buttons are always reachable */}
+          <div className="p-4 md:p-5 md:border-r border-line bg-bg-2/40 md:overflow-y-auto min-h-0">
             <div className="relative aspect-[4/5] overflow-hidden rounded-xl bg-surface-2 border border-line">
               {images.length ? (
                 <AnimatePresence mode="wait">
@@ -129,12 +130,16 @@ export function ItemModal() {
               <button onClick={() => reanalyze.mutate(false)} disabled={reanalyze.isPending} className="btn"><RefreshCw size={14} className={cn(reanalyze.isPending && 'animate-spin')} /> Re-analyze</button>
               <button onClick={() => reanalyze.mutate(true)} disabled={reanalyze.isPending} className="btn" title="Re-download media (frames, transcript) then re-analyze"><Wand2 size={14} /> Redo media + analysis</button>
               <button onClick={() => patch.mutate({ archived: !item.archived }, { onSuccess: () => { toast.success(item.archived ? 'Restored' : 'Archived'); if (!item.archived) modal.close(); } })} className="btn"><Archive size={14} />{item.archived ? 'Unarchive' : 'Archive'}</button>
-              <button onClick={() => { if (confirm('Delete this save from Resurface? (Does not touch Instagram)')) del.mutate(); }} className="btn btn-danger"><Trash2 size={14} /> Delete</button>
+              <button onClick={() => patch.mutate({ excluded: !item.excluded }, { onSuccess: () => { toast.success(item.excluded ? 'Included again' : 'Excluded — hidden everywhere, never analyzed'); if (!item.excluded) modal.close(); } })} className={cn('btn', item.excluded && 'chip-active border-accent')} title="Exclude from Resurface entirely (not analyzed, not searchable, not in the graph). Reversible from Library → Excluded.">{item.excluded ? <Eye size={14} /> : <EyeOff size={14} />}{item.excluded ? 'Include again' : 'Exclude'}</button>
+              {item.author && !item.excluded && (
+                <button onClick={() => { if (confirm(`Exclude ALL saves by @${item.author} from Resurface? (reversible)`)) excludeAuthor.mutate(item.author!); }} className="btn col-span-2"><UserX size={14} /> Exclude everything by @{item.author}</button>
+              )}
+              <button onClick={() => { if (confirm('Delete this save from Resurface? (Does not touch Instagram)')) del.mutate(); }} className="btn btn-danger col-span-2"><Trash2 size={14} /> Delete</button>
             </div>
           </div>
 
           {/* Content column */}
-          <div className="p-5 md:p-7 md:overflow-y-auto">
+          <div className="p-5 md:p-7 md:overflow-y-auto min-h-0">
             {modal.history.length > 1 && <button onClick={modal.back} className="btn btn-ghost btn-sm mb-2 -ml-2"><ArrowLeft size={14} /> Back</button>}
             {a ? (
               <>

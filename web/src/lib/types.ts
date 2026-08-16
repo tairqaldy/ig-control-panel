@@ -51,6 +51,9 @@ export interface ItemLight {
   collections: string[];
   favorite: boolean;
   archived: boolean;
+  excluded: boolean;
+  saved_at_est: number | null;
+  cost_usd: number;
   user_tags: string[];
   has_notes: boolean;
   media_status: string;
@@ -82,8 +85,28 @@ export interface ItemFull extends Omit<ItemLight, 'analysis'> {
 
 export interface ItemsResponse { items: ItemLight[]; total: number; page: number; limit: number; hasMore: boolean }
 
+export interface Scope {
+  years: number;
+  types: Array<'video' | 'image' | 'carousel'>;
+  transcribe: 'all' | 'short' | 'none';
+  transcribeMaxSeconds: number;
+  frames: number;
+  tier: 'standard' | 'economy';
+  budgetUsd: number;
+}
+export interface ScopeReport {
+  scope: Scope;
+  model: string;
+  counts: { total: number; analyzed: number; eligiblePending: number; outOfScope: number; excluded: number; failed: number; queued: number };
+  eligibleByType: Record<string, number>;
+  estimate: { standard: number; economy: number; perItemStandard: number; perItemEconomy: number; transcribeMinutes: number };
+  spent: { total: number; sinceReset: number; items: number; avgPerItem: number; byType: Record<string, { n: number; usd: number }> };
+  budget: { cap: number; remaining: number | null; paused: boolean; pauseReason: string | null };
+}
+
 export interface WorkerStatus {
   paused: boolean;
+  pauseReason: string | null;
   concurrency: number;
   openaiConfigured: boolean;
   queued: number;

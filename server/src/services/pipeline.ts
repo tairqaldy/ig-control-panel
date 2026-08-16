@@ -6,10 +6,22 @@ import { db, now, j } from '../db.js';
 import type { Analysis, ItemRow, MediaUrls } from '../types.js';
 import { ANALYSIS_JSON_SCHEMA, ANALYSIS_SYSTEM_PROMPT, buildAnalysisUserPrompt, CATEGORIES } from '../prompts/analysis.js';
 import { download, extractAudio, extractFrames, fileToVisionDataUrl, HttpError, itemDir, mediaAbs, saveThumb, safeName, toVisionDataUrl } from './media.js';
-import { embedTexts, embeddingToBuffer, generateStructured, hasOpenAI, models, transcribeFile } from './openai.js';
+import { embedTextsWithUsage, embeddingToBuffer, generateStructured, hasOpenAI, isQuotaError, models, transcribeFile } from './openai.js';
 import { enrichFromEmbed } from './importers.js';
 import { indexItem, normalizeTag } from './search.js';
 import { updateNeighborsFor, currentEmbeddingTag } from './neighbors.js';
+import { getScope, shouldTranscribe } from './scope.js';
+import { costOf, type Usage } from './pricing.js';
+
+export class QuotaError extends Error {}
+
+/** Merge a usage fragment into the item's stored usage JSON and recompute cost. */
+function recordUsage(id: string, patch: Partial<Usage>) {
+  const cur = getItem(id);
+  if (!cur) return;
+  const u: Usage = { ...j<Usage>(cur.usage, {}), ...patch };
+  setItem(id, { usage: JSON.stringify(u), cost_usd: costOf(u) });
+}
 
 export type Stage = 'media' | 'transcribe' | 'analyze' | 'embed';
 
@@ -37,12 +49,21 @@ function setItem(id: string, patch: Record<string, unknown>) {
 export async function processItem(id: string, opts: ProcessOptions = {}): Promise<void> {
   let item = getItem(id);
   if (!item) throw new Error(`item ${id} not found`);
+  if (item.excluded) return; // excluded saves are never processed
+
+  // Re-run the media stage when: pending; forced retry after failure; or a partial run that has no transcript yet
+  // (e.g. transcription died on a quota error) while the policy wants one and the CDN links are still fresh.
+  const scope = getScope();
+  const urlsFresh = !!item.media_urls_fetched_at && now() - item.media_urls_fetched_at < 1.2 * 86400;
+  const wantsTranscript = item.media_type === 'video' && !item.transcript && shouldTranscribe(scope, item.duration) && urlsFresh && !!j<MediaUrls | null>(item.media_urls, null)?.video;
+  const mediaNeeded = item.media_status === 'pending' || (opts.force && item.media_status === 'failed') || (item.media_status === 'partial' && wantsTranscript);
 
   // ---- Stage 1: media (thumb, frames, transcript) ----
-  if (!opts.skipMedia && (item.media_status === 'pending' || (opts.force && item.media_status === 'failed'))) {
+  if (!opts.skipMedia && mediaNeeded) {
     try {
       await runMediaStage(item);
     } catch (e: any) {
+      if (e instanceof QuotaError) throw e;
       log(id, `media stage failed: ${e?.message || e}`);
       setItem(id, { media_status: 'failed', media_error: String(e?.message || e).slice(0, 500) });
     }
@@ -63,9 +84,14 @@ export async function processItem(id: string, opts: ProcessOptions = {}): Promis
       item = getItem(id)!;
       // Analysis is the expensive part — never let an embedding hiccup mark it failed (it gets re-embedded on the next pass).
       let embedErr: string | null = null;
-      try { await runEmbeddingStage(item); } catch (e: any) { embedErr = `embedding failed (will retry): ${String(e?.message || e).slice(0, 300)}`; log(id, embedErr); }
+      try { await runEmbeddingStage(item); } catch (e: any) { if (isQuotaError(e)) throw e; embedErr = `embedding failed (will retry): ${String(e?.message || e).slice(0, 300)}`; log(id, embedErr); }
       setItem(id, { analysis_status: 'done', analysis_error: embedErr, attempts: item.attempts + 1 });
     } catch (e: any) {
+      if (isQuotaError(e) || e instanceof QuotaError) {
+        // Out of OpenAI credits: put the item back to pending (nothing is wrong with it) and let the worker pause.
+        setItem(id, { analysis_status: 'pending', analysis_error: 'Paused: OpenAI account has no credits — add credits and press Resume.' });
+        throw new QuotaError(String(e?.message || e));
+      }
       const msg = String(e?.message || e).slice(0, 800);
       log(id, `analysis failed: ${msg}`);
       setItem(id, { analysis_status: msg.startsWith('SKIP:') ? 'skipped' : 'failed', analysis_error: msg, attempts: item.attempts + 1 });
@@ -125,9 +151,10 @@ async function runMediaStage(itemIn: ItemRow) {
     }
   }
 
+  const scope = getScope();
   // Carousel slides → frames for vision (up to 6), each also stored as webp
   if (item.media_type === 'carousel' && urls.carousel?.length) {
-    const slides = urls.carousel.slice(0, 6);
+    const slides = urls.carousel.slice(0, Math.max(1, Math.min(6, scope.frames || 1)));
     for (let i = 0; i < slides.length; i++) {
       const s = slides[i];
       if (!s.thumb) continue;
@@ -147,22 +174,26 @@ async function runMediaStage(itemIn: ItemRow) {
   let transcriptLang: string | null = item.transcript_lang;
   let videoPathRel: string | null = item.video_path;
   const videoUrl = urls.video || urls.carousel?.find((c) => c.video)?.video || null;
-  if (videoUrl && item.media_type !== 'image' && !transcript) {
+  const existingFrames = j<string[]>(item.frames, []);
+  const needFrames = existingFrames.length === 0 && scope.frames > 0;
+  const needTranscript = !transcript && item.media_type === 'video' && shouldTranscribe(scope, item.duration);
+  if (videoUrl && item.media_type !== 'image' && (needFrames || needTranscript)) {
     const dir = itemDir(id);
     const tmpVideo = path.join(config.tmpDir, `${safeName(id)}.mp4`);
     try {
       const { buf } = await download(videoUrl, { maxBytes: config.maxVideoMb * 1e6, timeoutMs: 120_000 });
       await fsp.writeFile(tmpVideo, buf);
-      // frames
-      const fr = await extractFrames(tmpVideo, id, config.visionFrames, item.duration);
-      frames.push(...fr);
-      if (!thumbRel && fr.length) {
-        // use the first frame as thumbnail if we don't have one
-        const fbuf = await fsp.readFile(mediaAbs(fr[0]));
-        thumbRel = (await saveThumb(id, fbuf)).rel;
-      }
-      // transcript
-      if (hasOpenAI() && (item.duration || 0) <= config.transcribeMaxSeconds) {
+      // frames (count from the scope settings; 0 = caption/transcript-only analysis)
+      if (needFrames) {
+        const fr = await extractFrames(tmpVideo, id, scope.frames, item.duration);
+        frames.push(...fr);
+        if (!thumbRel && fr.length) {
+          const fbuf = await fsp.readFile(mediaAbs(fr[0]));
+          thumbRel = (await saveThumb(id, fbuf)).rel;
+        }
+      } else frames.push(...existingFrames);
+      // transcript — only when the policy says so (this is ~30% of the per-save cost)
+      if (needTranscript && hasOpenAI() && (item.duration || 0) <= config.transcribeMaxSeconds) {
         const audioFile = path.join(config.tmpDir, `${safeName(id)}.mp3`);
         let audioBuf: Buffer | null = null;
         let audioName = 'audio.mp3';
@@ -178,7 +209,9 @@ async function runMediaStage(itemIn: ItemRow) {
             transcript = tr.text || '';
             transcriptLang = tr.language || null;
             if (transcript.length < 3) transcript = '';
+            recordUsage(id, { transcribe: { model: models().transcribe, seconds: Math.round(item.duration || (await probeDurationSafe(tmpVideo)) || 30) } });
           } catch (e: any) {
+            if (isQuotaError(e)) throw new QuotaError(String(e?.message || e));
             log(id, `transcription failed: ${e?.message || e}`);
             if (!firstError) firstError = `transcribe: ${e?.message || e}`;
           }
@@ -191,19 +224,21 @@ async function runMediaStage(itemIn: ItemRow) {
         videoPathRel = `${safeName(id)}/video.mp4`;
       }
     } catch (e: any) {
+      if (e instanceof QuotaError) throw e;
       const msg = e instanceof HttpError && (e.status === 403 || e.status === 410 || e.status === 404) ? `video URL expired/unavailable (HTTP ${e.status})` : `video: ${e?.message || e}`;
       if (!firstError) firstError = msg;
       log(id, msg);
     } finally {
       await fsp.rm(tmpVideo, { force: true }).catch(() => {});
     }
-  }
+  } else if (existingFrames.length) frames.push(...existingFrames);
 
   const gotSomething = !!thumbRel || frames.length > 0 || !!transcript;
   const expired = !gotSomething && ageDays > 1 && !!firstError && /HTTP 40[34]|HTTP 410|expired/.test(firstError);
+  const uniqFrames = Array.from(new Set(frames));
   setItem(id, {
     thumb_path: thumbRel,
-    frames: frames.length ? JSON.stringify(frames) : item.frames,
+    frames: uniqFrames.length ? JSON.stringify(uniqFrames) : item.frames,
     video_path: videoPathRel,
     transcript: transcript ?? null,
     transcript_lang: transcriptLang,
@@ -245,6 +280,7 @@ async function runAnalysisStage(item: ItemRow) {
   });
   const analysis = normalizeAnalysis(data);
   setItem(id, { analysis: JSON.stringify(analysis), analysis_model: model, analyzed_at: now() });
+  recordUsage(id, { analysis: { model, input: usage.input, output: usage.output } });
   // tags
   const d = db();
   const delTags = d.prepare("DELETE FROM item_tags WHERE item_id = ? AND kind = 'ai'");
@@ -309,9 +345,14 @@ async function runEmbeddingStage(item: ItemRow) {
   const a = j<Analysis | null>(item.analysis, null);
   const text = embeddingText(item, a);
   if (!text.trim()) return;
-  const [vec] = await embedTexts([text]);
+  const { vectors: [vec], tokens } = await embedTextsWithUsage([text]);
   setItem(item.id, { embedding: embeddingToBuffer(vec), embedding_model: currentEmbeddingTag() });
+  recordUsage(item.id, { embed: { model: models().embed, tokens } });
   updateNeighborsFor(item.id, vec);
+}
+
+async function probeDurationSafe(file: string): Promise<number | null> {
+  try { const { probeDuration } = await import('./media.js'); return await probeDuration(file); } catch { return null; }
 }
 
 /** Remove derived data so an item can be fully re-processed. Returns false if the item is mid-flight (caller should tell the user). */

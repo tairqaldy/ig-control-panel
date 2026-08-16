@@ -162,6 +162,18 @@ CREATE TABLE IF NOT EXISTS automation_contacts (
 );
 `,
   },
+  {
+    id: 2,
+    sql: `
+ALTER TABLE items ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE items ADD COLUMN exclude_reason TEXT;
+ALTER TABLE items ADD COLUMN saved_at_est INTEGER;
+ALTER TABLE items ADD COLUMN usage TEXT;
+ALTER TABLE items ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_items_excluded ON items(excluded);
+CREATE INDEX IF NOT EXISTS idx_items_saved_est ON items(saved_at_est);
+`,
+  },
 ];
 
 function migrate(d: DB) {

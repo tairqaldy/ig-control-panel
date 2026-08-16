@@ -13,7 +13,7 @@ export function loadEmbeddings(force = false) {
   if (loaded && !force) return;
   cache.clear();
   const tag = currentEmbeddingTag();
-  const rows = db().prepare('SELECT id, embedding, embedding_model FROM items WHERE embedding IS NOT NULL AND archived = 0').all() as Array<{ id: string; embedding: Buffer; embedding_model: string | null }>;
+  const rows = db().prepare('SELECT id, embedding, embedding_model FROM items WHERE embedding IS NOT NULL AND archived = 0 AND excluded = 0').all() as Array<{ id: string; embedding: Buffer; embedding_model: string | null }>;
   let mismatched = 0;
   for (const r of rows) {
     if (r.embedding_model && r.embedding_model !== tag) { mismatched++; continue; }

@@ -22,7 +22,7 @@ export function pickResurface(n = 3, dateKey = todayKey()): ItemRow[] {
   const key = `resurface_picks:${dateKey}:${n}`;
   const stored = j<string[] | null>(getMeta(key), null);
   if (stored && stored.length) {
-    const rows = d.prepare(`SELECT * FROM items WHERE id IN (${stored.map(() => '?').join(',')}) AND archived = 0`).all(...stored) as ItemRow[];
+    const rows = d.prepare(`SELECT * FROM items WHERE id IN (${stored.map(() => '?').join(',')}) AND archived = 0 AND excluded = 0`).all(...stored) as ItemRow[];
     if (rows.length === stored.length) return stored.map((id) => rows.find((r) => r.id === id)!).filter(Boolean);
   }
   const picked = computePicks(n, dateKey);
@@ -31,7 +31,7 @@ export function pickResurface(n = 3, dateKey = todayKey()): ItemRow[] {
 }
 
 function computePicks(n: number, dateKey: string): ItemRow[] {
-  const rows = db().prepare("SELECT * FROM items WHERE analysis_status = 'done' AND archived = 0").all() as ItemRow[];
+  const rows = db().prepare("SELECT * FROM items WHERE analysis_status = 'done' AND archived = 0 AND excluded = 0").all() as ItemRow[];
   if (!rows.length) return [];
   const rnd = seeded(`resurface:${dateKey}`);
   const t = now();

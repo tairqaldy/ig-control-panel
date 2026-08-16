@@ -6,8 +6,11 @@ import { worker } from './services/worker.js';
 import { loadEmbeddings } from './services/neighbors.js';
 import { hasOpenAI } from './services/openai.js';
 import { ffmpegPath } from './services/media.js';
+import { recomputeSavedAtEst } from './services/scope.js';
 
 db(); // run migrations
+// backfill estimated save dates for libraries imported before this column existed
+try { if ((db().prepare("SELECT COUNT(*) AS n FROM items WHERE saved_rank IS NOT NULL AND saved_at_est IS NULL").get() as any).n > 0) recomputeSavedAtEst(); } catch {}
 loadEmbeddings();
 
 const app = createApp();

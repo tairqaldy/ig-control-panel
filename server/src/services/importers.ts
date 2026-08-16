@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import AdmZip from 'adm-zip';
 import { db, now, j } from '../db.js';
 import type { HarvestFile, HarvestItem, MediaType, MediaUrls } from '../types.js';
+import { recomputeSavedAtEst } from './scope.js';
 
 export interface ImportResult {
   importId: number;
@@ -164,6 +165,7 @@ export function upsertItems(items: HarvestItem[], source: 'harvest' | 'export' |
   const info = d
     .prepare('INSERT INTO imports (source, filename, total, created, updated, skipped, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
     .run(source, filename || null, items.length, created, updated, skipped, t);
+  if (source === 'harvest') { try { recomputeSavedAtEst(); } catch (e) { console.warn('[import] saved_at_est recompute failed', e); } }
   return { importId: Number(info.lastInsertRowid), total: items.length, created, updated, skipped, ids };
 }
 

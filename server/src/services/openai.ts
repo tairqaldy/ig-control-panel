@@ -23,8 +23,12 @@ export function openai(): OpenAI {
 }
 
 export function models() {
+  // analysis model: explicit setting/env wins; otherwise the scope tier decides (standard → mini, economy → nano)
+  let tier: string | null = null;
+  try { const s = getSetting('scope'); tier = s ? JSON.parse(s).tier || null : null; } catch {}
+  const explicit = getSetting('analysis_model') || process.env.OPENAI_MODEL || '';
   return {
-    analysis: getSetting('analysis_model') || config.analysisModel,
+    analysis: explicit || (tier === 'economy' ? 'gpt-5.4-nano' : config.analysisModel),
     ask: getSetting('ask_model') || config.askModel,
     transcribe: getSetting('transcribe_model') || config.transcribeModel,
     embed: config.embedModel,
@@ -138,10 +142,20 @@ export async function transcribeFile(buf: Buffer, filename: string, opts?: { lan
 }
 
 export async function embedTexts(texts: string[]): Promise<Float32Array[]> {
-  if (!texts.length) return [];
+  return (await embedTextsWithUsage(texts)).vectors;
+}
+export async function embedTextsWithUsage(texts: string[]): Promise<{ vectors: Float32Array[]; tokens: number }> {
+  if (!texts.length) return { vectors: [], tokens: 0 };
   const client = openai();
   const res = await client.embeddings.create({ model: models().embed, input: texts, dimensions: config.embedDims });
-  return res.data.sort((a, b) => a.index - b.index).map((d) => Float32Array.from(d.embedding));
+  return { vectors: res.data.sort((a, b) => a.index - b.index).map((d) => Float32Array.from(d.embedding)), tokens: res.usage?.total_tokens ?? 0 };
+}
+
+/** OpenAI billing/quota errors — the account is out of money, not a transient rate limit. */
+export function isQuotaError(e: unknown): boolean {
+  const msg = String((e as any)?.message || e || '');
+  const code = (e as any)?.code || (e as any)?.error?.code || '';
+  return /insufficient_quota|no credits remaining|exceeded your current quota|billing_hard_limit|billing/i.test(msg) || /insufficient_quota/i.test(String(code));
 }
 
 export function embeddingToBuffer(v: Float32Array): Buffer {

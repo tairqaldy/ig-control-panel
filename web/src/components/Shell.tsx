@@ -45,7 +45,7 @@ function WorkerPill() {
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-2 text-[12px] font-medium">
           <span className={cn('h-1.5 w-1.5 rounded-full', active && !data.paused ? 'bg-accent pulse-dot' : data.paused ? 'bg-warn' : 'bg-line-2')} />
-          {active && !data.paused ? 'Analyzing' : data.paused ? 'Paused' : 'Idle'}
+          {active && !data.paused ? 'Analyzing' : data.paused ? (data.pauseReason === 'quota' ? 'Paused · no OpenAI credits' : data.pauseReason === 'budget' ? 'Paused · budget cap' : 'Paused') : 'Idle'}
         </div>
         <span className="font-mono text-[11px] text-muted tabular">{data.analyzed}/{total}</span>
       </div>

@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
-import { Upload, Copy, Bookmark, FileJson, FileArchive, Link2, Play, Pause, RotateCcw, CheckCircle2, AlertCircle, Loader2, Terminal, ArrowRight, Sparkles } from 'lucide-react';
+import { Upload, Copy, Bookmark, FileJson, FileArchive, Link2, CheckCircle2, AlertCircle, Loader2, Terminal, ArrowRight } from 'lucide-react';
 import { api } from '../lib/api';
 import { PageHeader, Tabs, Field, Toggle } from '../components/ui';
+import { AnalysisPlan } from '../components/AnalysisPlan';
 import { useWorkerStatus } from '../components/Shell';
 import { cn, copyText, fmtAgo } from '../lib/utils';
 
@@ -53,7 +54,6 @@ export default function Import() {
   const upHarvest = useMutation({ mutationFn: (f: File) => { const fd = new FormData(); fd.append('file', f); fd.append('auto_analyze', autoAnalyze ? '1' : '0'); return api.post<any>('/api/import/harvest', fd); }, onSuccess: done, onError: (e: any) => toast.error(e.message) });
   const upExport = useMutation({ mutationFn: (f: File) => { const fd = new FormData(); fd.append('file', f); fd.append('auto_analyze', autoAnalyze ? '1' : '0'); fd.append('include_liked', includeLiked ? '1' : '0'); return api.post<any>('/api/import/instagram-export', fd); }, onSuccess: done, onError: (e: any) => toast.error(e.message) });
   const upUrls = useMutation({ mutationFn: () => api.post<any>('/api/import/urls', { urls, auto_analyze: autoAnalyze }), onSuccess: (r) => { done(r); setUrls(''); }, onError: (e: any) => toast.error(e.message) });
-  const jobs = useMutation({ mutationFn: (p: { path: string; body?: any }) => api.post<any>(p.path, p.body), onSuccess: () => { qc.invalidateQueries({ queryKey: ['jobs-status'] }); qc.invalidateQueries({ queryKey: ['items'] }); } });
   const copyScript = useCallback(() => { copyText(personalScript); toast.success('Harvester script copied — paste it into the DevTools console on instagram.com'); }, [personalScript]);
 
   const w = worker.data;
@@ -61,23 +61,10 @@ export default function Import() {
     <div>
       <PageHeader eyebrow="Import" title={<>Bring your saves <em className="text-accent not-italic">home</em></>} subtitle="Three ways in. The harvester is the richest (captions, stats, media for transcripts and frames). Re-running any import is safe: existing saves are updated, never duplicated." />
 
-      {/* Worker status */}
-      <div className="card p-4 mb-6 flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-2 min-w-[180px]">
-          <span className={cn('h-2 w-2 rounded-full', w && (w.queued + w.running) > 0 && !w.paused ? 'bg-accent pulse-dot' : w?.paused ? 'bg-warn' : 'bg-line-2')} />
-          <div>
-            <div className="text-[13.5px] font-medium">{w ? (w.paused ? 'Analysis paused' : w.queued + w.running > 0 ? `Analyzing · ${w.running} running, ${w.queued} queued` : 'Analysis idle') : 'Loading…'}</div>
-            <div className="text-[11.5px] text-muted">{w ? `${w.analyzed} analyzed · ${w.pending} pending · ${w.failed} failed · ${w.skipped} skipped · concurrency ${w.concurrency}` : ''}</div>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 ml-auto">
-          {w?.paused ? <button onClick={() => jobs.mutate({ path: '/api/jobs/resume' })} className="btn btn-sm"><Play size={13} /> Resume</button> : <button onClick={() => jobs.mutate({ path: '/api/jobs/pause' })} className="btn btn-sm"><Pause size={13} /> Pause</button>}
-          <button onClick={() => jobs.mutate({ path: '/api/jobs/queue', body: { what: 'pending' } })} className="btn btn-sm" title="Queue everything that hasn't been analyzed"><Sparkles size={13} /> Analyze pending ({w?.pending ?? 0})</button>
-          <button onClick={() => jobs.mutate({ path: '/api/jobs/queue', body: { what: 'failed' } })} className="btn btn-sm"><RotateCcw size={13} /> Retry failed ({w?.failed ?? 0})</button>
-          {!!w?.queued && <button onClick={() => jobs.mutate({ path: '/api/jobs/clear' })} className="btn btn-ghost btn-sm text-muted">Clear queue</button>}
-        </div>
-        {w && !w.openaiConfigured && <div className="w-full text-[12.5px] text-warn flex items-center gap-1.5"><AlertCircle size={13} /> OpenAI key missing — imports still work (and media gets fetched), but analysis waits until you add a key in Settings.</div>}
-        {w?.lastError && <div className="w-full text-[11.5px] text-muted font-mono truncate">last error: {w.lastError}</div>}
+      {/* Analysis plan: scope, cost, worker controls */}
+      <div className="mb-8">
+        <AnalysisPlan />
+        {w && !w.openaiConfigured && <div className="mt-3 text-[12.5px] text-warn flex items-center gap-1.5"><AlertCircle size={13} /> OpenAI key missing — imports still work (and media gets fetched), but analysis waits until you add a key in Settings.</div>}
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
