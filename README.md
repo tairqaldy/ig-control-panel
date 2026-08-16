@@ -1,7 +1,7 @@
 <p align="center">
-  <img src="web/public/favicon.svg" width="64" height="64" alt="Undig" />
+  <img src="web/public/favicon.svg" width="64" height="64" alt="Resurfly" />
 </p>
-<h1 align="center">Undig</h1>
+<h1 align="center">Resurfly</h1>
 <p align="center"><b>Turn your Instagram Saves graveyard into structured, searchable, talkable inspiration.</b><br/>
 Self-hosted · single user · open source (MIT) · one Docker container</p>
 
@@ -17,7 +17,7 @@ Self-hosted · single user · open source (MIT) · one Docker container</p>
 
 ---
 
-You saved 4,000 reels "for later". Later never came. Undig digs them all up and turns each one into clean, structured knowledge:
+You saved 4,000 reels "for later". Later never came. Resurfly digs them all up and turns each one into clean, structured knowledge:
 
 - **Every save, analyzed** — reels get transcribed (speech → text), key frames are read by a vision model, carousels are read slide by slide. Out comes a rephrased title, one-liner, summary, the actual key points (the 5 tips *are* the 5 tips), actionable takeaways, tags, category, entities (tools, people, brands, places), hook analysis, quotes, on-screen text, usefulness score, "why you probably saved this", and a remix idea for creators.
 - **A dashboard you'll actually open** — a calm library with filters (category, tag, creator, format, collection, favorites, evergreen), full-text + semantic search, list/grid views, bulk actions, notes & your own tags.
@@ -33,7 +33,7 @@ You saved 4,000 reels "for later". Later never came. Undig digs them all up and 
 ## How it works (30-second version)
 
 ```
-instagram.com ─(harvester, in your browser)─▶ JSON ─▶ Undig server ─▶ SQLite on a volume
+instagram.com ─(harvester, in your browser)─▶ JSON ─▶ Resurfly server ─▶ SQLite on a volume
                                                         │  downloads thumbs + video → ffmpeg frames + audio
                                                         │  OpenAI transcription (gpt-4o-mini-transcribe)
                                                         │  OpenAI structured analysis (vision, JSON schema)
@@ -71,19 +71,19 @@ You need: a [Railway](https://railway.com) account, an [OpenAI API key](https://
 
 ```bash
 npm i -g @railway/cli && railway login
-railway init --name undig
-railway add --service undig
+railway init --name resurfly
+railway add --service resurfly
 railway volume add --mount-path /data
 railway variables --set APP_USERNAME=you --set APP_PASSCODE=secret --set OPENAI_API_KEY=sk-... --set DATA_DIR=/data --skip-deploys
-railway up --service undig --detach
-railway domain --service undig
+railway up --service resurfly --detach
+railway domain --service resurfly
 ```
 </details>
 
 ## Run it locally
 
 ```bash
-git clone https://github.com/tairqaldy/resurface.git undig && cd undig
+git clone https://github.com/tairqaldy/resurface.git resurfly && cd resurfly
 cp .env.example .env            # set APP_USERNAME, APP_PASSCODE, OPENAI_API_KEY
 npm install
 npm run dev                     # API on :8080, Vite dev server on :5173 (proxied)
@@ -92,11 +92,11 @@ npm run dev                     # API on :8080, Vite dev server on :5173 (proxie
 Or the production build in one process: `npm run build && npm start` → http://localhost:8080. Data lands in `./data` at the repo root (a relative `DATA_DIR` always resolves against the repo root, whichever directory you start from).
 `ffmpeg` is bundled via `ffmpeg-static` for local dev; the Docker image installs it via apt.
 
-Docker: `docker build -t undig . && docker run -p 8080:8080 --env-file .env -v undig-data:/data undig` — inside a container the data dir is always `/data` (a relative `DATA_DIR` from your `.env` is ignored there), so mount your volume at `/data`.
+Docker: `docker build -t resurfly . && docker run -p 8080:8080 --env-file .env -v resurfly-data:/data resurfly` — inside a container the data dir is always `/data` (a relative `DATA_DIR` from your `.env` is ignored there), so mount your volume at `/data`.
 
 ## Importing your saves
 
-**Harvester (recommended).** Open instagram.com (logged in) → run the harvester (bookmarklet or paste into DevTools console — both copied from your Import page) → Start → it pages through *all* your saves (~1 request/second; a few thousand saves take 20–40 min, resumable) and maps your collections → click **Send to Undig** (token-gated direct upload) or download the JSON and drop it on the Import page. Media links inside expire in a few days, so don't wait. Details, privacy notes and troubleshooting: [docs/HARVESTER.md](docs/HARVESTER.md).
+**Harvester (recommended).** Open instagram.com (logged in) → run the harvester (bookmarklet or paste into DevTools console — both copied from your Import page) → Start → it pages through *all* your saves (~1 request/second; a few thousand saves take 20–40 min, resumable) and maps your collections → click **Send to Resurfly** (token-gated direct upload) or download the JSON and drop it on the Import page. Media links inside expire in a few days, so don't wait. Details, privacy notes and troubleshooting: [docs/HARVESTER.md](docs/HARVESTER.md).
 
 **Instagram data export.** Accounts Center → Download your information → *Saved* (JSON) → upload the ZIP. Gives links, save dates and collections; captions/thumbnails are fetched best-effort from public embed pages. Combine with the harvester for full media.
 

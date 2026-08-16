@@ -73,7 +73,7 @@ automations.post('/test', async (c) => {
 automations.post('/send-test', async (c) => {
   const b = await c.req.json<{ recipient_id: string; text: string }>();
   try {
-    const r = await sendDm(String(b.recipient_id), String(b.text || 'Test message from Undig'));
+    const r = await sendDm(String(b.recipient_id), String(b.text || 'Test message from Resurfly'));
     logSystemEvent(`Manual test DM sent to ${b.recipient_id}`, r);
     return c.json({ ok: true, result: r });
   } catch (e: any) {

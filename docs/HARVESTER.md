@@ -1,10 +1,10 @@
 # The harvester — exporting your Instagram saves
 
-The harvester is a small self-contained JavaScript file ([`harvester/harvester.js`](../harvester/harvester.js)) that runs **inside your own browser on instagram.com** and downloads all your saved posts as one JSON file. It's the richest import path: captions, creators, like/play counts, durations, audio titles, collections, and the media URLs Undig uses to fetch thumbnails, extract video frames and transcribe reels.
+The harvester is a small self-contained JavaScript file ([`harvester/harvester.js`](../harvester/harvester.js)) that runs **inside your own browser on instagram.com** and downloads all your saved posts as one JSON file. It's the richest import path: captions, creators, like/play counts, durations, audio titles, collections, and the media URLs Resurfly uses to fetch thumbnails, extract video frames and transcribe reels.
 
 ## Why a browser script?
 
-Instagram has no official API for reading your own saved posts. The web app you already use calls an internal endpoint (`/api/v1/feed/saved/posts/`) with your session; the harvester calls exactly the same endpoint, from the same page, with the same cookies — the way a browser extension would. Nothing is sent to any third party. The result either becomes a JSON file on your machine that *you* upload, or — if you copied the script from your own dashboard's Import page — goes straight to **your** Undig via the "Send to Undig" button (a token-gated form POST to your dashboard's URL; the token is private, lives 24 h, and only allows importing).
+Instagram has no official API for reading your own saved posts. The web app you already use calls an internal endpoint (`/api/v1/feed/saved/posts/`) with your session; the harvester calls exactly the same endpoint, from the same page, with the same cookies — the way a browser extension would. Nothing is sent to any third party. The result either becomes a JSON file on your machine that *you* upload, or — if you copied the script from your own dashboard's Import page — goes straight to **your** Resurfly via the "Send to Resurfly" button (a token-gated form POST to your dashboard's URL; the token is private, lives 24 h, and only allows importing).
 
 Rate limits are respected (~1 request/second with jitter, exponential back-off on `429`, automatic retry on network blips). Instagram itself is slow when paginating deep into a big library: expect **~1.5–2 saves/second**, i.e. 5,000 saves ≈ 40–50 minutes. You can **Stop** at any time and click **Start** later — it resumes from where it left off (as long as the tab stays open).
 
@@ -12,13 +12,13 @@ Rate limits are respected (~1 request/second with jitter, exponential back-off o
 
 1. Open **https://www.instagram.com/** on a desktop browser and make sure you're logged in to the account whose saves you want.
 2. Run the script. Two options:
-   - **Bookmarklet**: on the Undig *Import* page drag the **"Harvest saves (bookmarklet)"** button to your bookmarks bar. Click it while on instagram.com.
+   - **Bookmarklet**: on the Resurfly *Import* page drag the **"Harvest saves (bookmarklet)"** button to your bookmarks bar. Click it while on instagram.com.
    - **Console**: on the Import page click **"Copy console script"**, then on instagram.com press `F12` → *Console* → paste → `Enter`. Chrome may ask you to type `allow pasting` once first (it's a safety feature; the script is fully readable at `/harvester.js`).
 3. A dark panel appears bottom-right. Optional: uncheck *"Also map my collections"* to save requests, or set a *Max saves* to test with a small batch.
 4. Click **Start**. Watch the counter. You can **Stop** any time (and **Start** again later to resume) or **Download JSON** what's been collected so far.
-5. When it finishes: click **Send to Undig** (opens a small confirmation tab in your dashboard) — or **Download JSON** and drop `undig-harvest-YYYYMMDD.json` on the Import page. Import is instant; analysis then runs in the background (sidebar shows progress).
+5. When it finishes: click **Send to Resurfly** (opens a small confirmation tab in your dashboard) — or **Download JSON** and drop `resurfly-harvest-YYYYMMDD.json` on the Import page. Import is instant; analysis then runs in the background (sidebar shows progress).
 
-> **Upload soon after harvesting.** The media URLs inside the file are signed CDN links: images last ~4 days, videos ~1–2 days. Undig downloads what it needs right after import. If links have expired you'll see `media: expired` on those saves — just re-run the harvester and upload again; existing saves get their links refreshed (analyses, notes and favorites are kept).
+> **Upload soon after harvesting.** The media URLs inside the file are signed CDN links: images last ~4 days, videos ~1–2 days. Resurfly downloads what it needs right after import. If links have expired you'll see `media: expired` on those saves — just re-run the harvester and upload again; existing saves get their links refreshed (analyses, notes and favorites are kept).
 
 ## What's in the JSON
 
@@ -45,7 +45,7 @@ Rate limits are respected (~1 request/second with jitter, exponential back-off o
 }
 ```
 
-Order matters: items come newest-saved-first; Undig stores that as `saved_rank` (Instagram doesn't expose the exact save timestamp here — the official data export does, and importing both merges them).
+Order matters: items come newest-saved-first; Resurfly stores that as `saved_rank` (Instagram doesn't expose the exact save timestamp here — the official data export does, and importing both merges them).
 
 ## Troubleshooting
 
@@ -54,13 +54,13 @@ Order matters: items come newest-saved-first; Undig stores that as `saved_rank` 
 | Panel says *Not authorized (HTTP 401/403)* | You're not logged in, or Instagram is showing a checkpoint. Reload instagram.com, log in, retry. |
 | *Rate limited (HTTP 429). Waiting…* | Normal on very large libraries. It waits 20 s, 40 s, 60 s… and continues. Leave the tab open. |
 | Stops with a network error or `5xx` | It retries automatically with back-off. If it gives up, just click **Start** again — it resumes from the last cursor. Or **Download JSON** what you have; re-running later merges new items in. |
-| Nothing downloads at the end | Some browsers block downloads that aren't triggered by a click: click **Download JSON** manually (or **Send to Undig**). Or run `copy(JSON.stringify(window.__resurfaceHarvest))` in the console and paste into a file. |
-| "Upload token invalid or expired" after *Send to Undig* | The token embedded in the script/bookmarklet lasts 24 h. Copy the script (or re-drag the bookmarklet) from your Import page again and re-run. |
+| Nothing downloads at the end | Some browsers block downloads that aren't triggered by a click: click **Download JSON** manually (or **Send to Resurfly**). Or run `copy(JSON.stringify(window.__resurfaceHarvest))` in the console and paste into a file. |
+| "Upload token invalid or expired" after *Send to Resurfly* | The token embedded in the script/bookmarklet lasts 24 h. Copy the script (or re-drag the bookmarklet) from your Import page again and re-run. |
 | Bookmarklet does nothing | Some setups block `javascript:` bookmarks on this site — use the console method. |
 | Instagram warns *"Stop! This is a browser feature intended for developers…"* | That's a generic warning about pasting unknown code. You can read every line of ours: `/harvester.js`. |
 
 ## Privacy & safety
 
-- The script has no dependencies and no analytics. It talks to instagram.com (reads) and — only when you click **Send to Undig** — to your own dashboard's URL. Never to any third party.
+- The script has no dependencies and no analytics. It talks to instagram.com (reads) and — only when you click **Send to Resurfly** — to your own dashboard's URL. Never to any third party.
 - It reads only your saved posts (and collection membership if enabled). It never writes to your account.
 - Use it on your own account only. Instagram's terms discourage automation; this is a read-only, human-paced export of your own data, but you use it at your own risk.

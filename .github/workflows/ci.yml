@@ -21,4 +21,4 @@ jobs:
       - name: Harvester syntax check
         run: node --check harvester/harvester.js
       - name: Docker build (smoke)
-        run: docker build -t undig:ci .
+        run: docker build -t resurfly:ci .

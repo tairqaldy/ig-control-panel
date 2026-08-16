@@ -41,8 +41,8 @@ export default function Import() {
   const history = useQuery({ queryKey: ['imports'], queryFn: () => api.get<{ imports: any[] }>('/api/import/history') });
   const token = useQuery({ queryKey: ['upload-token'], queryFn: () => api.post<{ token: string; expiresAt: number }>('/api/import/token'), staleTime: 60 * 60_000 });
   useEffect(() => { fetch('/harvester.js').then((r) => r.text()).then(setScript).catch(() => {}); }, []);
-  // The script we hand out embeds a private 24h upload token so the harvester can "Send to Undig" directly.
-  const personalScript = script ? script.replace(/__UNDIG_TOKEN__/g, token.data?.token || '__UNDIG_TOKEN__') : '';
+  // The script we hand out embeds a private 24h upload token so the harvester can "Send to Resurfly" directly.
+  const personalScript = script ? script.replace(/__RESURFLY_TOKEN__/g, token.data?.token || '__RESURFLY_TOKEN__') : '';
   const bookmarklet = personalScript ? `javascript:${encodeURIComponent(personalScript.replace(/^\/\*[\s\S]*?\*\/\s*/, ''))}` : '';
   // React refuses to render javascript: URLs in href — set it through the DOM so the drag-to-bookmarks-bar gesture keeps the real code.
   useEffect(() => { if (bookmarkletRef.current) bookmarkletRef.current.setAttribute('href', bookmarklet || '#'); }, [bookmarklet]);
@@ -81,7 +81,7 @@ export default function Import() {
                 ['Open instagram.com in a desktop browser', 'Make sure you’re logged in to the account whose saves you want.'],
                 ['Run the harvester there', <>Either click the bookmarklet below on instagram.com, or open DevTools (F12 → Console), paste the script and hit Enter. Chrome may ask you to type <code className="font-mono">allow pasting</code> first.</>],
                 ['Press Start and wait', 'A small panel appears. It pages through your saves at ~1 request/second (Instagram is slow on big libraries — a few thousand saves can take 20–40 minutes; you can Stop and later Start again to resume).'],
-                ['Send to Undig (or drop the JSON here)', 'When it finishes, click “Send to Undig” — the script you copied embeds a private 24-hour upload token, so it posts straight into this dashboard. Or “Download JSON” and drop the file below. Media links expire in a few days, so don’t wait. Analysis then runs in the background.'],
+                ['Send to Resurfly (or drop the JSON here)', 'When it finishes, click “Send to Resurfly” — the script you copied embeds a private 24-hour upload token, so it posts straight into this dashboard. Or “Download JSON” and drop the file below. Media links expire in a few days, so don’t wait. Analysis then runs in the background.'],
               ].map(([t, d], i) => (
                 <li key={i} className="flex gap-3"><span className="font-mono text-[11px] text-accent pt-1 w-5 shrink-0">{String(i + 1).padStart(2, '0')}</span><div><div className="font-medium">{t}</div><div className="text-muted mt-0.5 leading-relaxed">{d}</div></div></li>
               ))}
@@ -94,7 +94,7 @@ export default function Import() {
             <div className="mt-4 text-[12px] text-muted leading-relaxed">Privacy: the script only talks to instagram.com using your own session and writes a file to your computer. Nothing is sent anywhere else. It respects rate limits and stops politely on errors.</div>
           </div>
           <div className="flex flex-col gap-4">
-            <DropZone accept=".json,application/json" onFile={(f) => upHarvest.mutate(f)} busy={upHarvest.isPending} label="Drop the harvester JSON here" hint="undig-harvest-YYYYMMDD.json · or click to choose" />
+            <DropZone accept=".json,application/json" onFile={(f) => upHarvest.mutate(f)} busy={upHarvest.isPending} label="Drop the harvester JSON here" hint="resurfly-harvest-YYYYMMDD.json · or click to choose" />
             <div className="card-flat p-4 text-[12.5px] text-muted leading-relaxed"><FileJson size={14} className="inline mr-1.5 -mt-0.5 text-ink" />Re-running the harvester later only adds new saves and refreshes counts. Your notes, favorites and analyses are kept.</div>
           </div>
         </motion.div>

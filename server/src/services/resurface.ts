@@ -13,12 +13,12 @@ function seeded(seed: string) {
 export function todayKey(): string { return new Date().toISOString().slice(0, 10); }
 
 /**
- * Pick N saves worth resurfacing today. Weighted by usefulness, evergreen-ness, time since last undigd, and age.
+ * Pick N saves worth resurfacing today. Weighted by usefulness, evergreen-ness, time since last resurflyd, and age.
  * Deterministic per day so the "Today" set is stable.
  */
 export function pickResurface(n = 3, dateKey = todayKey()): ItemRow[] {
   const d = db();
-  // Stable for the whole day: persist the chosen ids on first computation (marking items "undigd" must not reshuffle the set).
+  // Stable for the whole day: persist the chosen ids on first computation (marking items "resurflyd" must not reshuffle the set).
   const key = `resurface_picks:${dateKey}:${n}`;
   const stored = j<string[] | null>(getMeta(key), null);
   if (stored && stored.length) {
@@ -33,7 +33,7 @@ export function pickResurface(n = 3, dateKey = todayKey()): ItemRow[] {
 function computePicks(n: number, dateKey: string): ItemRow[] {
   const rows = db().prepare("SELECT * FROM items WHERE analysis_status = 'done' AND archived = 0 AND excluded = 0").all() as ItemRow[];
   if (!rows.length) return [];
-  const rnd = seeded(`undig:${dateKey}`);
+  const rnd = seeded(`resurfly:${dateKey}`);
   const t = now();
   const scored = rows.map((r) => {
     const a = j<Analysis | null>(r.analysis, null);

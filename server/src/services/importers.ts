@@ -169,12 +169,12 @@ export function upsertItems(items: HarvestItem[], source: 'harvest' | 'export' |
   return { importId: Number(info.lastInsertRowid), total: items.length, created, updated, skipped, ids };
 }
 
-/** Parse a Undig harvester JSON file (or a raw array of items). */
+/** Parse a Resurfly harvester JSON file (or a raw array of items). */
 export function parseHarvestJson(text: string): { file: HarvestFile; items: HarvestItem[] } {
   const data = JSON.parse(text);
   if (Array.isArray(data)) return { file: { format: 'resurface-harvest', version: 1, items: data }, items: data };
   if (data && Array.isArray(data.items)) return { file: data as HarvestFile, items: data.items };
-  throw new Error('Unrecognized JSON: expected {items:[...]} from the Undig harvester');
+  throw new Error('Unrecognized JSON: expected {items:[...]} from the Resurfly harvester');
 }
 
 /* ------------------------------------------------------------------ */

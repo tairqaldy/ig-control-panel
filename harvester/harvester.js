@@ -1,9 +1,9 @@
 /*
- * Undig harvester - exports YOUR Instagram saved posts as a JSON file.
+ * Resurfly harvester - exports YOUR Instagram saved posts as a JSON file.
  *
  * How it works: you run this in your own browser while logged into instagram.com. It calls the same
  * internal endpoints the Instagram web app uses, paginates through your saved posts (and collections),
- * normalizes them, and downloads a JSON file you then upload to your Undig dashboard.
+ * normalizes them, and downloads a JSON file you then upload to your Resurfly dashboard.
  *
  * It never sends anything anywhere except to instagram.com itself. Read it - it's short.
  *
@@ -11,7 +11,7 @@
  *   1) Open https://www.instagram.com/ (logged in)
  *   2) Open DevTools console (F12 -> Console). Chrome may ask you to type "allow pasting" first.
  *   3) Paste this whole file, press Enter. A small panel appears bottom-right. Click "Start".
- *   4) When it finishes, click "Download JSON" and upload the file at __UNDIG_URL__ -> Import.
+ *   4) When it finishes, click "Download JSON" and upload the file at __RESURFLY_URL__ -> Import.
  *
  * Or drag the "Harvest saves" bookmarklet from the Import page to your bookmarks bar and click it on instagram.com.
  */
@@ -19,10 +19,10 @@
   'use strict';
   const APP_ID = '936619743392459';
   const VERSION = 1;
-  const UNDIG_URL = '__UNDIG_URL__';
-  // Optional: a private 24h upload token embedded by your dashboard's Import page (enables "Send to Undig").
-  const UNDIG_TOKEN = '__UNDIG_TOKEN__';
-  const CAN_SEND = UNDIG_URL.startsWith('http') && UNDIG_TOKEN && !UNDIG_TOKEN.startsWith('__');
+  const RESURFLY_URL = '__RESURFLY_URL__';
+  // Optional: a private 24h upload token embedded by your dashboard's Import page (enables "Send to Resurfly").
+  const RESURFLY_TOKEN = '__RESURFLY_TOKEN__';
+  const CAN_SEND = RESURFLY_URL.startsWith('http') && RESURFLY_TOKEN && !RESURFLY_TOKEN.startsWith('__');
   const PANEL_ID = 'resurface-harvester';
 
   if (!/(^|\.)instagram\.com$/.test(location.hostname)) {
@@ -41,7 +41,7 @@
   const panel = mk('div', `position:fixed;right:16px;bottom:16px;z-index:2147483647;width:340px;background:#141412;color:#f2efe8;border:1px solid #2a2926;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.45);padding:14px 16px 12px;${font}font-size:13px;line-height:1.45;`);
   panel.id = PANEL_ID;
   const head = mk('div', 'display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;');
-  const title = mk('div', 'font-weight:600;letter-spacing:.2px;font-size:14px;', 'Undig - Harvest saves');
+  const title = mk('div', 'font-weight:600;letter-spacing:.2px;font-size:14px;', 'Resurfly - Harvest saves');
   const closeBtn = mk('button', 'background:transparent;border:0;color:#9b978e;font-size:18px;cursor:pointer;line-height:1;padding:2px 4px;', 'x');
   closeBtn.onclick = () => { stopFlag = true; panel.remove(); };
   head.append(title, closeBtn); panel.append(head);
@@ -67,7 +67,7 @@
   btns.append(startBtn, stopBtn, dlBtn); panel.append(btns);
   let sendBtn = null;
   if (CAN_SEND) {
-    sendBtn = btn('Send to Undig', true);
+    sendBtn = btn('Send to Resurfly', true);
     css(sendBtn, sendBtn.style.cssText + 'margin-top:8px;width:100%;opacity:.5;');
     sendBtn.disabled = true;
     panel.append(sendBtn);
@@ -224,7 +224,7 @@
           if (!m || !m.code) continue;
           if (byCode.has(m.code)) continue;
           let n;
-          try { n = normalize(m, null); } catch (e) { console.warn('[undig] skipping item with unexpected shape', m.code, e); continue; }
+          try { n = normalize(m, null); } catch (e) { console.warn('[resurfly] skipping item with unexpected shape', m.code, e); continue; }
           byCode.set(m.code, n);
           items.push(n);
           if (items.length >= limit) break;
@@ -249,7 +249,7 @@
             setStatus(`Mapping collection "${col.name}"...`);
             let data;
             try { data = await api(`/api/v1/feed/collection/${col.id}/posts/` + (cMax ? `?max_id=${encodeURIComponent(cMax)}` : '')); }
-            catch (e) { console.warn('[undig] collection failed', col.name, e); break; }
+            catch (e) { console.warn('[resurfly] collection failed', col.name, e); break; }
             pages++;
             for (const it of (data.items || [])) {
               const m = it.media || it; if (!m || !m.code) continue;
@@ -266,10 +266,10 @@
       }
       fill.style.width = '100%';
       finished = feedDone;
-      setStatus(stopFlag ? `Stopped at ${items.length} saves. Click Start to resume, or Download JSON / Send what you have.` : `Done! ${items.length} saves collected. Download the JSON, then upload it at ${UNDIG_URL.startsWith('http') ? UNDIG_URL + '/import' : 'your Undig dashboard -> Import'}.`);
+      setStatus(stopFlag ? `Stopped at ${items.length} saves. Click Start to resume, or Download JSON / Send what you have.` : `Done! ${items.length} saves collected. Download the JSON, then upload it at ${RESURFLY_URL.startsWith('http') ? RESURFLY_URL + '/import' : 'your Resurfly dashboard -> Import'}.`);
     } catch (e) {
       hadError = true;
-      console.error('[undig harvester]', e);
+      console.error('[resurfly harvester]', e);
       setStatus(`Error: ${e && e.message ? e.message : e}\n${items.length ? `${items.length} saves collected so far (partial). Click Start to resume, or Download JSON / Send what you have.` : ''}`);
     }
     enable(startBtn, true); enable(stopBtn, false); enable(dlBtn, items.length > 0);
@@ -278,22 +278,22 @@
     window.__resurfaceDone = true;
     // Only auto-download / announce completion for a COMPLETE run - never mask an error or a partial result.
     if (items.length && !stopFlag && !hadError && finished) {
-      if (CAN_SEND) setStatus(`Done! ${items.length} saves collected. Click "Send to Undig" (opens a new tab) or "Download JSON".`);
+      if (CAN_SEND) setStatus(`Done! ${items.length} saves collected. Click "Send to Resurfly" (opens a new tab) or "Download JSON".`);
       else download();
     }
   }
 
   /** Cross-site form POST straight into your dashboard (opens a small result tab). Works despite instagram.com's CSP because it's a normal navigation, not fetch(). */
-  function sendToUndig() {
+  function sendToResurfly() {
     const payload = buildPayload();
     const form = document.createElement('form');
-    form.method = 'POST'; form.enctype = 'multipart/form-data'; form.action = UNDIG_URL + '/api/import/harvest-form'; form.target = '_blank';
+    form.method = 'POST'; form.enctype = 'multipart/form-data'; form.action = RESURFLY_URL + '/api/import/harvest-form'; form.target = '_blank';
     css(form, 'display:none');
-    const tok = document.createElement('input'); tok.type = 'hidden'; tok.name = 'token'; tok.value = UNDIG_TOKEN; form.append(tok);
+    const tok = document.createElement('input'); tok.type = 'hidden'; tok.name = 'token'; tok.value = RESURFLY_TOKEN; form.append(tok);
     const fileInput = document.createElement('input'); fileInput.type = 'file'; fileInput.name = 'file';
     try {
       const dt = new DataTransfer();
-      dt.items.add(new File([JSON.stringify(payload)], 'undig-harvest.json', { type: 'application/json' }));
+      dt.items.add(new File([JSON.stringify(payload)], 'resurfly-harvest.json', { type: 'application/json' }));
       fileInput.files = dt.files;
     } catch (e) {
       setStatus('Your browser blocked the direct upload - use "Download JSON" and upload it on the Import page.');
@@ -303,7 +303,7 @@
     document.body.appendChild(form);
     form.submit();
     setTimeout(() => form.remove(), 5000);
-    setStatus(`Sent ${items.length} saves to Undig (check the new tab). You can also Download JSON as a backup.`);
+    setStatus(`Sent ${items.length} saves to Resurfly (check the new tab). You can also Download JSON as a backup.`);
   }
 
   function buildPayload() {
@@ -316,11 +316,11 @@
     const a = document.createElement('a');
     const d = new Date(); const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
     a.href = URL.createObjectURL(blob);
-    a.download = `undig-harvest-${stamp}.json`;
+    a.download = `resurfly-harvest-${stamp}.json`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 30000);
     window.__resurfaceHarvest = payload;
-    setStatus(`Downloaded ${items.length} saves as ${a.download}. Now upload it at ${UNDIG_URL.startsWith('http') ? UNDIG_URL + '/import' : 'your Undig dashboard -> Import'}.\nNo file? Click "Download JSON" again, or run copy(JSON.stringify(window.__resurfaceHarvest)) in the console and paste into a .json file.`);
+    setStatus(`Downloaded ${items.length} saves as ${a.download}. Now upload it at ${RESURFLY_URL.startsWith('http') ? RESURFLY_URL + '/import' : 'your Resurfly dashboard -> Import'}.\nNo file? Click "Download JSON" again, or run copy(JSON.stringify(window.__resurfaceHarvest)) in the console and paste into a .json file.`);
   }
 
   window.__resurfaceStart = harvest;
@@ -328,5 +328,5 @@
   startBtn.onclick = harvest;
   stopBtn.onclick = () => { stopFlag = true; setStatus('Stopping... (click Start later to resume)'); };
   dlBtn.onclick = download;
-  if (sendBtn) sendBtn.onclick = sendToUndig;
+  if (sendBtn) sendBtn.onclick = sendToResurfly;
 })();

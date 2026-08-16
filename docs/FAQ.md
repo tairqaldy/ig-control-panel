@@ -2,7 +2,7 @@
 
 ### What does it cost?
 
-Undig itself is free (MIT). Running it:
+Resurfly itself is free (MIT). Running it:
 
 - **Hosting**: Railway Hobby (~$5/mo incl. usage credit) or any Docker host. RAM use is ~200–400 MB. Storage: ~30 KB per thumbnail + ~4 frames × ~40 KB per reel ≈ 200 KB/save → 1 GB per ~5,000 saves.
 - **OpenAI** (measured on a real 3,900-save library, Standard plan = `gpt-5.4-mini` + 4 low-detail frames + `gpt-4o-mini-transcribe`):
@@ -33,7 +33,7 @@ Skipped = there was nothing to analyze (no caption, no transcript, no fetchable 
 
 ### Multiple Instagram accounts?
 
-Run one Undig instance per account (it's single-user by design). Or import both harvests into one library — saves simply merge (creators/tags mix fine); the dashboard shows the username from the most recent harvest.
+Run one Resurfly instance per account (it's single-user by design). Or import both harvests into one library — saves simply merge (creators/tags mix fine); the dashboard shows the username from the most recent harvest.
 
 ### Can I use another LLM?
 

@@ -83,7 +83,7 @@ export default function Dashboard() {
   const auth = useAuth();
   const nav = useNavigate();
   const stats = useQuery({ queryKey: ['stats'], queryFn: () => api.get<Stats>('/api/stats'), refetchInterval: 15000 });
-  const undig = useQuery({ queryKey: ['resurface'], queryFn: () => api.get<{ date: string; items: ItemLight[] }>('/api/resurface?n=3'), staleTime: 5 * 60_000 });
+  const resurfly = useQuery({ queryKey: ['resurface'], queryFn: () => api.get<{ date: string; items: ItemLight[] }>('/api/resurface?n=3'), staleTime: 5 * 60_000 });
   const s = stats.data;
   const t = s?.totals;
   const hours = t ? Math.round((t.total_seconds / 3600) * 10) / 10 : 0;
@@ -118,17 +118,17 @@ export default function Dashboard() {
         ) : Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24" />)}
       </div>
 
-      {/* Undig today */}
+      {/* Resurfly today */}
       <section className="mb-8">
         <div className="flex items-end justify-between mb-3">
           <div><div className="eyebrow mb-1">Resurface · today</div><h2 className="display text-[24px]">Three saves worth a second look</h2></div>
           <Link to="/resurface" className="btn btn-sm">More <ArrowRight size={13} /></Link>
         </div>
-        {undig.isLoading ? (
+        {resurfly.isLoading ? (
           <div className="grid sm:grid-cols-3 gap-4">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-72" />)}</div>
-        ) : undig.data && undig.data.items.length ? (
+        ) : resurfly.data && resurfly.data.items.length ? (
           <div className="grid sm:grid-cols-3 gap-4">
-            {undig.data.items.map((it, i) => (
+            {resurfly.data.items.map((it, i) => (
               <motion.div key={it.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 + i * 0.08 }} className="flex flex-col gap-2">
                 <ItemCard item={it} index={i} />
                 {it.why_today && <div className="flex items-start gap-2 px-1 text-[12.5px] text-ink-2 leading-snug"><Sparkles size={13} className="text-accent shrink-0 mt-0.5" /><span>{it.why_today}</span></div>}

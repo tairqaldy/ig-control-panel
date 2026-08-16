@@ -23,7 +23,7 @@ const STARTERS = [
 const STORAGE = 'rs-ask-history';
 
 /** Questions about the product itself are answered locally (free, instant) — this doubles as onboarding. */
-const GUIDE = `**Undig turns your Instagram saves into a searchable second brain.** Here's the tour:
+const GUIDE = `**Resurfly turns your Instagram saves into a searchable second brain.** Here's the tour:
 
 - **Library** — every save with an AI title, one-liner, summary, key points, tags, category, hook analysis and transcript. Filter by category/tag/creator/format, search by keyword *and* meaning, favorite, add notes, exclude what you don't want. Export to JSON/CSV/Markdown/Obsidian.
 - **Ask** (this page) — ask anything in plain language; I answer only from your saves and cite them as clickable chips.
@@ -41,7 +41,7 @@ Try next:
 
 function localAnswer(q: string): string | null {
   const s = q.trim().toLowerCase();
-  if (/^(hi|hello|hey|yo|help|start|guide|tour)\b/.test(s) || /(what (can|do) (you|u|this|undig|the app|this app|this platform)|how (does|do) (this|undig|it) work|what is (this|undig)|what('s| is) this (for|about)|how to use|onboard)/.test(s)) return GUIDE;
+  if (/^(hi|hello|hey|yo|help|start|guide|tour)\b/.test(s) || /(what (can|do) (you|u|this|resurfly|the app|this app|this platform)|how (does|do) (this|resurfly|it) work|what is (this|resurfly)|what('s| is) this (for|about)|how to use|onboard)/.test(s)) return GUIDE;
   return null;
 }
 
@@ -175,7 +175,7 @@ export default function Ask() {
             <div className="mt-6 grid md:grid-cols-[1.2fr_1fr] gap-4">
               <div className="card-flat p-5">
                 <div className="eyebrow mb-2">New here?</div>
-                <div className="text-[14px] leading-relaxed text-ink-2">Ask me <button onClick={() => ask('What can Undig do?')} className="text-accent underline underline-offset-2">what Undig can do</button> — a free, instant tour. Then ask about your library the way you'd ask a friend who watched every reel you ever saved: “what did I save about cold email?”, “which AI tools show up most?”, “plan my week from my saved productivity advice”.</div>
+                <div className="text-[14px] leading-relaxed text-ink-2">Ask me <button onClick={() => ask('What can Resurfly do?')} className="text-accent underline underline-offset-2">what Resurfly can do</button> — a free, instant tour. Then ask about your library the way you'd ask a friend who watched every reel you ever saved: “what did I save about cold email?”, “which AI tools show up most?”, “plan my week from my saved productivity advice”.</div>
               </div>
               <div className="card-flat p-5 text-[13px] text-muted leading-relaxed">
                 <div className="eyebrow mb-2">How answers work</div>

@@ -56,7 +56,7 @@ export function createApp() {
     if (!p) return c.text('// harvester not found', 404);
     let src = fs.readFileSync(p, 'utf8');
     const base = config.publicUrl || new URL(c.req.url).origin;
-    src = src.replace(/__UNDIG_URL__/g, base);
+    src = src.replace(/__RESURFLY_URL__/g, base);
     return c.body(src, 200, { 'content-type': 'application/javascript; charset=utf-8', 'cache-control': 'no-cache' });
   });
 
@@ -84,7 +84,7 @@ export function createApp() {
     const indexHtml = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
     app.get('*', (c) => c.html(indexHtml));
   } else {
-    app.get('/', (c) => c.text('Undig API is running. Build the web app (npm run build) to serve the dashboard, or run the Vite dev server.'));
+    app.get('/', (c) => c.text('Resurfly API is running. Build the web app (npm run build) to serve the dashboard, or run the Vite dev server.'));
   }
 
   app.onError((err, c) => {

@@ -158,7 +158,7 @@ export function toMarkdownDigest(items: ExportItem[]): string {
     if (!byCat.has(c)) byCat.set(c, []);
     byCat.get(c)!.push(it);
   }
-  const out: string[] = [`# Undig export — ${items.length} saves`, '', `Exported ${new Date().toISOString().slice(0, 10)}.`, ''];
+  const out: string[] = [`# Resurfly export — ${items.length} saves`, '', `Exported ${new Date().toISOString().slice(0, 10)}.`, ''];
   for (const [cat, list] of Array.from(byCat.entries()).sort((a, b) => b[1].length - a[1].length)) {
     out.push(`## ${cat} (${list.length})`, '');
     for (const it of list) {
@@ -178,7 +178,7 @@ export function toObsidianZip(items: ExportItem[]): Buffer {
   const zip = new AdmZip();
   const archive = { append: (content: string, o: { name: string }) => zip.addFile(o.name, Buffer.from(content, 'utf8')) };
   const usedNames = new Set<string>();
-  const index: string[] = ['# Undig — Instagram Saves', '', `${items.length} saves. Open the graph view to explore tags ↔ saves.`, ''];
+  const index: string[] = ['# Resurfly — Instagram Saves', '', `${items.length} saves. Open the graph view to explore tags ↔ saves.`, ''];
   const tagMap = new Map<string, string[]>();
   for (const it of items) {
     const a = it.analysis;
@@ -195,6 +195,6 @@ export function toObsidianZip(items: ExportItem[]): Buffer {
   for (const [t, names] of tagMap) {
     archive.append([`# ${t}`, '', ...names.map((n) => `- [[Saves/${n}]]`)].join('\n'), { name: `Tags/${t}.md` });
   }
-  archive.append(index.join('\n'), { name: 'Undig Index.md' });
+  archive.append(index.join('\n'), { name: 'Resurfly Index.md' });
   return zip.toBuffer();
 }

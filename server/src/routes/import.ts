@@ -113,7 +113,7 @@ harvestFormRoute.post('/', async (c) => {
   const html = (title: string, body: string, ok: boolean) => c.html(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
 <body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#f4f1ea;color:#17161a;font-family:ui-sans-serif,system-ui,sans-serif">
 <div style="max-width:520px;padding:32px;border:1px solid #e3dfd3;border-radius:16px;background:#fbfaf6;box-shadow:0 8px 24px -12px rgba(23,22,26,.18)">
-<div style="font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#8b877d;margin-bottom:6px">Undig</div>
+<div style="font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#8b877d;margin-bottom:6px">Resurfly</div>
 <h1 style="font-family:Georgia,serif;font-weight:400;font-size:28px;margin:0 0 10px">${title}</h1>
 <p style="font-size:14px;line-height:1.55;color:#4a4843;margin:0 0 18px">${body}</p>
 ${ok ? '<a href="/import" style="display:inline-block;background:#177a4c;color:#f4f1ea;text-decoration:none;padding:10px 16px;border-radius:12px;font-weight:600;font-size:14px">Open the dashboard →</a>' : ''}

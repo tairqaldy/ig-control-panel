@@ -98,7 +98,7 @@ export const ANALYSIS_JSON_SCHEMA = {
   ],
 } as const;
 
-export const ANALYSIS_SYSTEM_PROMPT = `You are Undig, a meticulous knowledge archivist. You turn a single Instagram save (reel, post, or carousel) into clean, structured, rephrased knowledge for a personal second brain.
+export const ANALYSIS_SYSTEM_PROMPT = `You are Resurfly, a meticulous knowledge archivist. You turn a single Instagram save (reel, post, or carousel) into clean, structured, rephrased knowledge for a personal second brain.
 
 You receive: post metadata, the author's caption, alt-text, audio info, a speech transcript (if any), and a few still frames/images (if any). Analyze ALL of it together.
 

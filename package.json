@@ -1,8 +1,8 @@
 {
-  "name": "undig",
+  "name": "resurfly",
   "version": "1.0.0",
   "private": true,
-  "description": "Undig — turn your Instagram Saves graveyard into structured, searchable, AI-analyzed inspiration. Self-hosted, single-user, open source.",
+  "description": "Resurfly — turn your Instagram Saves graveyard into structured, searchable, AI-analyzed inspiration. Self-hosted, single-user, open source.",
   "license": "MIT",
   "workspaces": [
     "server",
@@ -16,8 +16,8 @@
     "build": "npm run build -w web && npm run build -w server",
     "start": "npm run start -w server",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
-    "docker:build": "docker build -t undig .",
-    "docker:run": "docker run --rm -p 8080:8080 --env-file .env -v undig-data:/data undig"
+    "docker:build": "docker build -t resurfly .",
+    "docker:run": "docker run --rm -p 8080:8080 --env-file .env -v resurfly-data:/data resurfly"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

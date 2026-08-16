@@ -1,6 +1,6 @@
 # Costs, pricing & the hosted-version plan
 
-Undig is open source (MIT). Anyone can self-host it for the price of a Railway container and their own OpenAI usage — this page tells you exactly what that costs, and how a paid **hosted** version would be priced so the margin is out in the open. We'd rather show the math than hide it.
+Resurfly is open source (MIT). Anyone can self-host it for the price of a Railway container and their own OpenAI usage — this page tells you exactly what that costs, and how a paid **hosted** version would be priced so the margin is out in the open. We'd rather show the math than hide it.
 
 ## 1. What one save costs (measured, Aug 2026)
 
@@ -55,7 +55,7 @@ Pricing that keeps a healthy margin and stays honest:
 |---|---|---|---|
 | **Free / self-host** | $0 | this repo, your keys, your server | — |
 | **Dig** (one-time) | **$19** | one full library dig, Economy tier, 3,000 saves included (+$4 per extra 1,000), Ask for 30 days, full export | ~45% |
-| **Undig Pro** | **$9 / mo** or **$79 / yr** | up to 5,000 saves analyzed on Standard (fair use), continuous harvests, Ask, graph, exports, DM automations | month 1 −$16 (Std) → **payback in month 3–4**, then ~72% |
+| **Resurfly Pro** | **$9 / mo** or **$79 / yr** | up to 5,000 saves analyzed on Standard (fair use), continuous harvests, Ask, graph, exports, DM automations | month 1 −$16 (Std) → **payback in month 3–4**, then ~72% |
 | **Pro + Deep** add-on | +$15 one-time | re-run the whole library on Standard 4-frame + full transcripts | ~50% |
 
 Notes: the initial dig is the only expensive moment, so either charge for it once (Dig) or amortize it over a subscription with an annual plan default. Show the per-plan cost table on the pricing page — "your $9 covers about $2.5 of API + storage; the rest pays for the servers, the harvester upkeep and the person answering support."
@@ -76,7 +76,7 @@ The open-source app stays single-tenant (SQLite + local files). The hosted produ
 3. **Storage**: thumbnails/frames to Cloudflare R2 (S3 API) under `tenant/<id>/…`; served through signed URLs or a Worker.
 4. **Workers**: the same pipeline as a separate Railway service, pulling jobs from a Postgres queue (`FOR UPDATE SKIP LOCKED`), per-tenant fairness (round-robin) and per-tenant budgets.
 5. **Billing**: Paddle (merchant of record → handles VAT/sales tax globally). Overlay checkout, webhooks (`subscription.created/updated/canceled`, `transaction.completed`) → `tenants.plan/status`; Paddle customer portal for cancellations/invoices; usage caps enforced by the worker.
-6. **Harvester**: unchanged — it runs in the user's browser; the "Send to Undig" token is minted per tenant.
+6. **Harvester**: unchanged — it runs in the user's browser; the "Send to Resurfly" token is minted per tenant.
 7. **Ops**: Sentry, structured logs, cost dashboards (sum of `cost_usd` per tenant/day), the retention cron, backups (Neon PITR / R2 versioning).
 
 Estimated effort: ~2–3 weeks for one engineer to reach a billable beta. What's needed to start: Paddle account (sandbox first), Cloudflare account (R2 bucket + API token), Neon (or Railway Postgres) DB, a domain, Resend (email), Sentry (optional).
@@ -84,7 +84,7 @@ Estimated effort: ~2–3 weeks for one engineer to reach a billable beta. What's
 ## 6. Things worth adding next (roadmap)
 
 - **Collections / smart folders** ("Recipes", "Content ideas") built from filters, shareable read-only links.
-- **Weekly digest e-mail** — 5 undigd saves + what you saved this week, one click to Ask.
+- **Weekly digest e-mail** — 5 resurflyd saves + what you saved this week, one click to Ask.
 - **Chrome extension** — save-and-analyze any reel while browsing; auto-harvest new saves nightly.
 - **Content-idea studio** — remix a save into a script/hook set for your niche (the `remix_idea` field is the seed).
 - **Sensitive-content filter** — auto-exclude categories you pick (personal, adult, memes, ads) *before* paying for analysis; a "private mode" that keeps some saves local-only and never sends them to OpenAI.

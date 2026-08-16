@@ -1,8 +1,8 @@
-# Privacy policy (for a self-hosted Undig instance)
+# Privacy policy (for a self-hosted Resurfly instance)
 
 *Use this page as the "Privacy Policy URL" when you switch your Meta app to Live. Adjust the operator name/contact if you publish it elsewhere.*
 
-**Who operates this app.** A single individual runs this Undig instance for their **own** Instagram professional account. It is not offered as a service to other people.
+**Who operates this app.** A single individual runs this Resurfly instance for their **own** Instagram professional account. It is not offered as a service to other people.
 
 **What data is processed.**
 - *Saved posts:* metadata of posts the operator saved on Instagram (captions, creator usernames, public counts, thumbnails, video frames and machine transcripts), stored on the operator's own server for personal knowledge management.

@@ -75,7 +75,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <div className="flex items-center gap-2.5 px-2 py-1.5 mb-4">
         <Logo />
         <div className="leading-tight">
-          <div className="display text-[19px] tracking-tight">Undig</div>
+          <div className="display text-[19px] tracking-tight">Resurfly</div>
           <div className="text-[10.5px] text-muted font-mono uppercase tracking-[0.12em]">Instagram saves, alive</div>
         </div>
       </div>
@@ -117,7 +117,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <aside className="hidden lg:flex fixed inset-y-0 left-0 w-[248px] flex-col p-4 border-r border-line/70 bg-bg/60 backdrop-blur-sm">{nav}</aside>
       {/* Mobile top bar */}
       <div className="lg:hidden fixed top-0 inset-x-0 z-40 flex items-center justify-between px-4 h-14 border-b border-line bg-bg/85 backdrop-blur">
-        <div className="flex items-center gap-2"><Logo size={20} /><span className="display text-[18px]">Undig</span></div>
+        <div className="flex items-center gap-2"><Logo size={20} /><span className="display text-[18px]">Resurfly</span></div>
         <div className="flex items-center gap-1">
           <button onClick={() => setOpen(true)} className="btn btn-ghost btn-sm !px-2"><Search size={16} /></button>
           <button onClick={() => setMobileOpen((o) => !o)} className="btn btn-ghost btn-sm !px-2">{mobileOpen ? <X size={16} /> : <Menu size={16} />}</button>
