@@ -102,5 +102,7 @@ export function createClient({ appUrl, token }) {
     }, { retries: 1 }),
     /** DELETE /api/companion/session — revoke server-side harvesting. */
     clearSession: () => request(`${base}/api/companion/session`, { method: 'DELETE', headers: auth }, { retries: 1 }),
+    /** DELETE /api/companion/device — remove this device (and its session) server-side; the token stops working. */
+    deleteDevice: () => request(`${base}/api/companion/device`, { method: 'DELETE', headers: auth }, { retries: 1 }),
   };
 }

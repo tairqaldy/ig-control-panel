@@ -171,8 +171,8 @@ async function doPair({ code, appUrl }) {
 
 async function doUnpair() {
   const client = await getClient();
-  const { serverHarvest } = await store.get(['serverHarvest']);
-  if (client && serverHarvest) { try { await client.clearSession(); } catch (e) { /* best effort */ } }
+  // Best effort: remove the device server-side too, so it disappears from Settings → Companion and the token dies.
+  if (client) { try { await client.deleteDevice(); } catch (e) { try { await client.clearSession(); } catch { /* ignore */ } } }
   await store.clearPairing();
   await setBadge('');
   chrome.alarms.clear(CONTINUE_ALARM);

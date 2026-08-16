@@ -54,8 +54,8 @@ Works with the hosted service at resurfly.com and with self-hosted Resurfly (ope
 ## Graphic assets
 
 - Icon 128×128: `extension/icons/icon128.png`
-- Screenshots 1280×800 (at least one, up to five): generate with `node scripts/capture.mjs cards …` style captures or take them from a paired Companion popup on a light background — see `extension/dist/screenshots/` after running `node extension/store-assets.mjs` (popup unpaired, popup paired, options page, Import → Companion card in Resurfly).
-- Small promo tile 440×280 (optional): `extension/dist/promo-440x280.png` (same script).
+- Screenshots 1280×800 (at least one, up to five): generate with `node scripts/capture.mjs cards …` style captures or take them from a paired Companion popup on a light background — ready in `extension/store/` (popup-unpaired, popup-paired, popup-login-needed, options; 720×1200 @2x popup captures — the Web Store wants 1280×800 or 640×400, so place them on a paper background with the tool of your choice or use them as-is for the small tile).
+- App icon 1024×1024 (also usable for Meta): `extension/store/icon-1024.png`.
 
 ## Publishing steps (once, by the account owner)
 
