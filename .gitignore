@@ -22,3 +22,5 @@ Thumbs.db
 # scratch
 tmp/
 .railway/
+# internal, not for the public repo
+private/

@@ -1,0 +1,27 @@
+name: Deploy to Railway
+
+# Opt-in alternative to Railway's native GitHub integration (which auto-deploys on push once the
+# Railway GitHub App has access to this repo). Enable this workflow by adding two things in the repo settings:
+#   - secret   RAILWAY_TOKEN        (Railway → project → Settings → Tokens → project token for the production environment)
+#   - variable DEPLOY_WITH_ACTIONS  = "true"
+# Do NOT enable both paths at once (you'd deploy twice per push).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    if: ${{ vars.DEPLOY_WITH_ACTIONS == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm i -g @railway/cli
+      - name: railway up
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service resurface --detach

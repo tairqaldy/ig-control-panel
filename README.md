@@ -83,7 +83,7 @@ railway domain --service undig
 ## Run it locally
 
 ```bash
-git clone https://github.com/tairqaldy/ig-control-panel.git undig && cd undig
+git clone https://github.com/tairqaldy/resurface.git undig && cd undig
 cp .env.example .env            # set APP_USERNAME, APP_PASSCODE, OPENAI_API_KEY
 npm install
 npm run dev                     # API on :8080, Vite dev server on :5173 (proxied)
