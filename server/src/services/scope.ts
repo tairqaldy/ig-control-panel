@@ -148,6 +148,29 @@ export function scopeReport(): ScopeReport {
 
 const round = (n: number, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
 
+/**
+ * Items analyzed before per-save cost tracking existed get an ESTIMATED cost (marked estimated:true)
+ * so "Spent so far" isn't misleadingly low. Real token counts are used for everything analyzed afterwards.
+ */
+export function backfillEstimatedCosts(): number {
+  const d = db();
+  const m = models();
+  const rows = d.prepare("SELECT id, analysis_model, media_type, duration, transcript, frames FROM items WHERE analysis_status = 'done' AND (cost_usd IS NULL OR cost_usd = 0) AND usage IS NULL").all() as Array<{ id: string; analysis_model: string | null; media_type: string; duration: number | null; transcript: string | null; frames: string | null }>;
+  if (!rows.length) return 0;
+  const upd = d.prepare('UPDATE items SET cost_usd = ?, usage = ? WHERE id = ?');
+  d.transaction(() => {
+    for (const r of rows) {
+      let frames = 0;
+      try { frames = r.frames ? (JSON.parse(r.frames) as string[]).length : 0; } catch {}
+      const hasVideo = r.media_type === 'video';
+      const trSec = hasVideo && r.transcript ? Math.round(r.duration || 40) : 0;
+      const cost = estimateItemCost({ model: r.analysis_model || m.analysis, transcribeModel: m.transcribe, embedModel: m.embed, frames: frames || (r.media_type === 'image' ? 1 : 0), hasVideo, transcribeSeconds: trSec, hasTranscript: !!r.transcript });
+      upd.run(cost, JSON.stringify({ estimated: true }), r.id);
+    }
+  })();
+  return rows.length;
+}
+
 /** True when the configured budget is exhausted. */
 export function budgetExhausted(): boolean {
   const scope = getScope();

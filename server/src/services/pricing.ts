@@ -32,7 +32,9 @@ let overrides: Record<string, ModelPrice> = {};
 try { overrides = process.env.PRICES_JSON ? JSON.parse(process.env.PRICES_JSON) : {}; } catch { overrides = {}; }
 
 export function priceFor(model: string): ModelPrice {
-  const key = Object.keys({ ...DEFAULT_PRICES, ...overrides }).find((k) => model === k || model.startsWith(k + '-')) || model;
+  const all = { ...DEFAULT_PRICES, ...overrides };
+  // exact match first, then the LONGEST prefix (so 'gpt-4o-mini-transcribe' never resolves to 'gpt-4o-mini')
+  const key = all[model] ? model : Object.keys(all).filter((k) => model.startsWith(k + '-')).sort((a, b) => b.length - a.length)[0] || model;
   return { ...(DEFAULT_PRICES[key] || {}), ...(overrides[key] || {}) };
 }
 

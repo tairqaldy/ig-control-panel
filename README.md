@@ -11,6 +11,7 @@ Self-hosted · single user · open source (MIT) · one Docker container</p>
   <a href="docs/HARVESTER.md">Harvester</a> ·
   <a href="docs/AUTOMATIONS.md">DM automations</a> ·
   <a href="docs/ARCHITECTURE.md">Architecture</a> ·
+  <a href="docs/BUSINESS.md">Costs & pricing</a> ·
   <a href="docs/FAQ.md">FAQ</a>
 </p>
 
@@ -41,7 +42,7 @@ instagram.com ─(harvester, in your browser)─▶ JSON ─▶ Resurface server
                                           React dashboard (Library · Ask · Resurface · Graph · Import · Automations)
 ```
 
-Costs (OpenAI, defaults): roughly **$0.004–0.007 per save** — about **$20–30 for 4,500 saves** including transcription. Read [docs/FAQ.md](docs/FAQ.md#what-does-it-cost) for the breakdown and cheaper model options.
+Costs (OpenAI, measured): **≈ $0.0076 per reel on Standard, ≈ $0.003 on Economy** — roughly $7.5 (or $3) per 1,000 saves. You control the spend from the **Analysis plan** panel: only saves from the last N years, media types, transcription policy, frames, quality tier, a budget cap, and per-item / per-creator **Exclude**. Real per-save costs are tracked from token counts. Full breakdown, self-hosting bill and the hosted-version pricing math: [docs/BUSINESS.md](docs/BUSINESS.md).
 
 ## Quick start (Railway, ~10 minutes)
 
