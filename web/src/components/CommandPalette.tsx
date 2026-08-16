@@ -16,8 +16,20 @@ export function CommandPalette() {
   const { toggle, theme } = useTheme();
   const { hosted } = useAuth();
   const [q, setQ] = useState('');
+  const [sel, setSel] = useState('');
   const dq = useDebounced(q, 200);
-  useEffect(() => { if (!open) setQ(''); }, [open]);
+  useEffect(() => { if (!open) { setQ(''); setSel(''); } }, [open]);
+  // cmdk drops its selection when async results re-render; keep the first visible item selected so Enter always does something.
+  useEffect(() => {
+    if (!open) return;
+    const id = requestAnimationFrame(() => {
+      const items = Array.from(document.querySelectorAll('[cmdk-item]')) as HTMLElement[];
+      if (!items.length) return;
+      const values = items.map((el) => el.getAttribute('data-value') || '');
+      if (!sel || !values.includes(sel)) setSel(values[0]);
+    });
+    return () => cancelAnimationFrame(id);
+  });
   const items = useQuery({ queryKey: ['palette-items', dq], queryFn: () => api.get<ItemsResponse>(`/api/items${qs({ q: dq, limit: 8 })}`), enabled: open && dq.length >= 2 });
   const facets = useQuery({ queryKey: ['facets'], queryFn: () => api.get<Facets>('/api/facets'), enabled: open, staleTime: 60_000 });
   const go = (fn: () => void) => { setOpen(false); fn(); };
@@ -46,7 +58,7 @@ export function CommandPalette() {
         <motion.div className="fixed inset-0 z-[90] flex items-start justify-center pt-[12vh] px-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
           <div className="fixed inset-0 bg-ink/30 dark:bg-black/60 backdrop-blur-[2px]" onClick={() => setOpen(false)} />
           <motion.div initial={{ opacity: 0, y: -8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6, scale: 0.98 }} transition={{ type: 'spring', stiffness: 500, damping: 38 }} className="relative w-full max-w-xl overflow-hidden rounded-2xl border border-line bg-surface" style={{ boxShadow: 'var(--shadow-lg)' }}>
-            <Command label="Command palette" shouldFilter={false} loop>
+            <Command label="Command palette" shouldFilter={false} loop value={sel} onValueChange={setSel}>
               <div className="flex items-center gap-2 border-b border-line px-4">
                 <Search size={16} className="text-muted" />
                 <Command.Input value={q} onValueChange={setQ} autoFocus placeholder="Search saves, tags, creators, or jump to a page" className="w-full bg-transparent py-3.5 text-[14px] outline-none placeholder:text-muted-2" />
