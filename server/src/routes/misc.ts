@@ -425,14 +425,16 @@ misc.get('/graph', (c) => {
   }
   const isCat = mode === 'category';
   const g = itemGraph(t, {
-    maxItems: Math.min(6000, graphCap, gnum(q('max_items'), isCat ? 250 : 800, 10, 6000)),
-    minTag: gnum(q('min_tag'), isCat ? 2 : 3, 1, 50),
+    // Category drill-in stays readable: 160 newest saves, tags shared by ≥ 3 of them, 2 tags per save, no hub links
+    // (every save here belongs to the category anyway — the hub only made a starburst).
+    maxItems: Math.min(6000, graphCap, gnum(q('max_items'), isCat ? 160 : 800, 10, 6000)),
+    minTag: gnum(q('min_tag'), isCat ? 3 : 3, 1, 50),
     minAuthor: gnum(q('min_author'), isCat ? 2 : 3, 1, 50),
-    tagsPerItem: gnum(q('tags_per_item'), 3, 1, 10),
+    tagsPerItem: gnum(q('tags_per_item'), isCat ? 2 : 3, 1, 10),
     similarPerItem: gnum(q('similar_per_item'), 2, 0, 8),
-    similarMin: gnum(q('similar_min'), 0.7, 0.3, 0.99),
+    similarMin: gnum(q('similar_min'), isCat ? 0.75 : 0.7, 0.3, 0.99),
     includeSimilar: q('similar') !== '0',
-    includeCategoryHubs: q('category_hubs') !== '0',
+    includeCategoryHubs: q('category_hubs') === '1' || (!isCat && q('category_hubs') !== '0'),
     category,
   });
   return c.json({ nodes: g.nodes, links: g.links, meta: { mode, category: category || null, categories, totals, items: g.items, tags: g.tags, authors: g.authors, links: g.links.length, maxItems: g.maxItems, capped: g.capped, planCap: finite(graphCap), totalAnalyzed: g.totalAnalyzed } });
