@@ -15,7 +15,7 @@ export const DOCS_URL = `${GITHUB_URL}/tree/main/docs`;
 export const COMPANION_DOC_URL = `${GITHUB_URL}/blob/main/docs/COMPANION.md`;
 export const HARVESTER_DOC_URL = `${GITHUB_URL}/blob/main/docs/HARVESTER.md`;
 /** Chrome Web Store listing (env `VITE_COMPANION_URL`), falling back to the docs page ("Load unpacked"). */
-export const COMPANION_URL: string = (import.meta.env.VITE_COMPANION_URL as string | undefined) || COMPANION_DOC_URL;
+export const COMPANION_URL: string = (import.meta.env.VITE_COMPANION_URL as string | undefined) || 'https://github.com/tairqaldy/resurfly/releases/latest';
 export const SUPPORT_EMAIL = 'hello@resurfly.com';
 /** Legal pages are served by the app itself (Paddle and Meta both need them on the domain). */
 export const PRIVACY_URL = '/privacy';

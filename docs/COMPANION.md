@@ -8,7 +8,7 @@ Source: [`extension/`](../extension) — Manifest V3, plain JavaScript, no bundl
 
 ## Install
 
-**Chrome Web Store** — `https://chrome.google.com/webstore/detail/resurfly-companion/…` (listing pending; the Import page in Resurfly links here once it is live).
+**Chrome Web Store** — listing pending review. Until then, download the latest zip from the [Releases page](https://github.com/tairqaldy/resurfly/releases/latest) and load it unpacked (below) — the Import page in Resurfly links there.
 
 **Load unpacked** (open source / development):
 

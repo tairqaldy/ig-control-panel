@@ -6,7 +6,7 @@ import type { CompanionDevice, CompanionDevicesResponse, PairCode } from '../../
 export const COMPANION_DEVICES_KEY = ['companion-devices'] as const;
 
 /** Chrome Web Store link (env `VITE_COMPANION_URL`), falling back to the docs page for "Load unpacked". */
-export const COMPANION_INSTALL_URL: string = (import.meta.env.VITE_COMPANION_URL as string | undefined) || 'https://github.com/tairqaldy/resurfly/blob/main/docs/COMPANION.md';
+export const COMPANION_INSTALL_URL: string = (import.meta.env.VITE_COMPANION_URL as string | undefined) || 'https://github.com/tairqaldy/resurfly/releases/latest';
 export const COMPANION_IS_STORE = /chrome\.google\.com|chromewebstore\.google\.com/.test(COMPANION_INSTALL_URL);
 
 const num = (v: unknown): number | null => (v === null || v === undefined || v === '' ? null : Number.isFinite(Number(v)) ? Number(v) : null);
