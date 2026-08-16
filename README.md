@@ -83,7 +83,7 @@ railway domain --service resurfly
 ## Run it locally
 
 ```bash
-git clone https://github.com/tairqaldy/resurface.git resurfly && cd resurfly
+git clone https://github.com/tairqaldy/resurfly.git resurfly && cd resurfly
 cp .env.example .env            # set APP_USERNAME, APP_PASSCODE, OPENAI_API_KEY
 npm install
 npm run dev                     # API on :8080, Vite dev server on :5173 (proxied)

@@ -107,7 +107,7 @@ export default function Automations() {
                   {s?.igUserId && <span className="font-mono text-[11px] text-muted">IG user id {s.igUserId}</span>}
                 </div>
                 <div className="text-[12.5px] text-muted leading-relaxed mb-3">
-                  {s?.configured ? 'Your rules run on incoming DMs, story replies and comments. Keep the Meta app in Live mode so events from real people arrive.' : <>~15 minutes, once. The full walkthrough with screenshots-in-words is in <a className="text-accent underline" href="https://github.com/tairqaldy/resurface/blob/main/docs/AUTOMATIONS.md" target="_blank" rel="noreferrer">docs/AUTOMATIONS.md</a>.</>}
+                  {s?.configured ? 'Your rules run on incoming DMs, story replies and comments. Keep the Meta app in Live mode so events from real people arrive.' : <>~15 minutes, once. The full walkthrough with screenshots-in-words is in <a className="text-accent underline" href="https://github.com/tairqaldy/resurfly/blob/main/docs/AUTOMATIONS.md" target="_blank" rel="noreferrer">docs/AUTOMATIONS.md</a>.</>}
                 </div>
                 <ol className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5">
                   {steps.map((st, i) => (
