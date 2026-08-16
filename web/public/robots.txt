@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /media/
+Sitemap: https://resurfly.com/sitemap.xml
