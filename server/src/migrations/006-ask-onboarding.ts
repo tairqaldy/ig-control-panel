@@ -7,6 +7,8 @@
  *   onboarding_dismissed     – the checklist / welcome flow was dismissed (key:'dismissed')
  *   onboarding_asked         – the user asked something in Ask           (key:'asked'; also set by POST /api/ask)
  *   onboarding_welcome_seen  – the /welcome flow was shown once           (key:'welcome_seen')
+ *   onboarding_welcome_done  – the /welcome wizard was finished (ROUND7 §2; key:'welcome_done')
+ *   onboarding_welcome_step  – furthest wizard screen reached, '1'…'5' (ROUND7 §2; key:'welcome_step' + numeric value)
  */
 import type { ExtraMigration } from './index.js';
 
@@ -15,6 +17,8 @@ export const ONBOARDING_META_KEYS = {
   dismissed: 'onboarding_dismissed',
   asked: 'onboarding_asked',
   welcome_seen: 'onboarding_welcome_seen',
+  welcome_done: 'onboarding_welcome_done',
+  welcome_step: 'onboarding_welcome_step',
 } as const;
 
 export const migration006: ExtraMigration = {

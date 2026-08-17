@@ -5,11 +5,14 @@ import { ArrowRight, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../lib/store';
 import { Logo } from '../components/ui';
 import { MarketingPage } from '../components/marketing';
+import { usePlansCatalog } from '../components/Pricing';
+import { trialCardChip } from '../lib/plans';
 
 /** Log in — the same light paper as the landing (hosted and self-hosted alike). */
 export default function Login() {
   const auth = useAuth();
   const hosted = auth.hosted;
+  const { catalog } = usePlansCatalog(); // whether a card is taken at signup decides what the trial line may claim
   const [u, setU] = useState('');
   const [p, setP] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -64,7 +67,7 @@ export default function Login() {
           {err && <div className="mb-4 rounded-xl border border-danger/30 bg-danger-soft px-3 py-2 text-[12.5px] text-danger" role="alert">{err}</div>}
           <button disabled={busy || !u || !p} className="btn btn-primary w-full py-2.5">{busy ? (hosted ? 'Logging in…' : 'Opening…') : hosted ? 'Log in' : 'Enter'} <ArrowRight size={15} /></button>
           {hosted ? (
-            <div className="mt-5 text-[12.5px] text-muted text-center">New here? <Link to="/signup" className="text-accent underline underline-offset-2">Start your free trial</Link><span className="text-muted-2"> · 3 days, no card</span></div>
+            <div className="mt-5 text-[12.5px] text-muted text-center">New here? <Link to="/signup" className="text-accent underline underline-offset-2">Start your free trial</Link><span className="text-muted-2"> · {catalog.trialDays} days, {trialCardChip(catalog)}</span></div>
           ) : (
             <div className="mt-5 text-[11.5px] text-muted leading-relaxed">Single-user dashboard. Credentials are set by whoever deployed this instance (see README).</div>
           )}

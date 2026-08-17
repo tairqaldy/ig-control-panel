@@ -8,7 +8,7 @@ import { api, ApiError } from '../lib/api';
 import type { AnalyticsMedia, AnalyticsRange, AnalyticsResponse } from '../lib/types-instagram';
 import { cn, fmtAgo, fmtNum } from '../lib/utils';
 import { PageHeader, Tabs, Skeleton, Empty } from '../components/ui';
-import { AccountBadge, startInstagramConnect, useIgAccount } from '../components/instagram';
+import { AccountBadge, startInstagramConnect, useIgAccount, useIgAvailability } from '../components/instagram';
 import { AreaChart, HeatStrip, MixBar, WEEKDAYS, fmtHour, fmtWeekdays } from '../components/charts';
 
 /* ---------- helpers ---------- */
@@ -55,10 +55,20 @@ function Kpi({ label, value, hint, delta, icon: Icon, index, primary = false, cl
 
 const DEMO_DISMISS_KEY = 'rs-analytics-demo-dismissed';
 
+/**
+ * The Connect button on the demo banner (ROUND7 §3). It used to be gated on `configured` — merely "this server has a
+ * Meta app id" — so on the hosted app in Development mode it sent strangers to Meta's error page from a page the spec
+ * names explicitly. Nothing is offered until availability has answered, and a "no" says why instead.
+ */
 function ConnectCta({ className, label = 'Connect Instagram', size = 'sm' }: { className?: string; label?: string; size?: 'sm' | 'md' }) {
   const acc = useIgAccount();
+  const av = useIgAvailability();
   const cls = cn('btn btn-primary', size === 'sm' && 'btn-sm', className);
-  if (acc.data?.configured) return <button onClick={startInstagramConnect} className={cls}>{label} <ArrowRight size={12} /></button>;
+  if (av.isLoading || !av.data) return <span className="text-[12px] text-muted">Checking Instagram…</span>;
+  if (!av.data.unavailable && !av.data.canConnect) {
+    return <span className="text-[12px] text-muted max-w-sm leading-snug">{av.data.reason || 'Instagram accounts cannot be connected yet.'}</span>;
+  }
+  if (acc.data?.configured) return <button onClick={() => startInstagramConnect('/analytics')} className={cls}>{label} <ArrowRight size={12} /></button>;
   return <Link to="/settings#integrations" className={cls}>{label} <ArrowRight size={12} /></Link>;
 }
 

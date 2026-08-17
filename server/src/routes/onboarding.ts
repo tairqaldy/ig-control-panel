@@ -3,17 +3,18 @@
  *
  *   GET  /api/onboarding                 → OnboardingPayload (see below)
  *   POST /api/onboarding/event {key}     → sets a meta flag, returns the fresh OnboardingPayload
- *        key ∈ 'explored' | 'dismissed' | 'asked' | 'welcome_seen'
+ *        key ∈ 'explored' | 'dismissed' | 'asked' | 'welcome_seen' | 'welcome_done' | 'welcome_step' (+ numeric `value`)
  *
  * No table: flags live in `meta` (tenant-scoped) under the keys in migrations/006-ask-onboarding.ts.
  */
 import { Hono } from 'hono';
-import { config } from '../config.js';
+
 import { db, getMeta, setMeta } from '../db.js';
 import { tid } from '../auth.js';
 import { worker } from '../services/worker.js';
 import { igConnected } from '../services/ask.js';
 import { ONBOARDING_META_KEYS } from '../migrations/006-ask-onboarding.js';
+import { igAvailabilityCached } from '../services/ig-availability.js';
 
 export const onboarding = new Hono();
 
@@ -30,6 +31,9 @@ export interface OnboardingPayload {
   };
   dismissed: boolean;
   welcomeSeen: boolean;
+  welcomeDone: boolean;
+  /** furthest /welcome screen reached (0 = never started), so the wizard resumes on a second device */
+  welcomeStep: number;
   firstRun: boolean;
   suggestedNext: SuggestedNext;
 }
@@ -47,11 +51,17 @@ export function onboardingPayload(t: number): OnboardingPayload {
   const running = !ws.paused && ((ws.running || 0) > 0 || (ws.queued || 0) > 0);
   const asked = flag('asked') || !!d.prepare('SELECT 1 FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.tenant_id = ? LIMIT 1').get(t);
   const explored = flag('explored');
-  const connectAvailable = !!(process.env.META_APP_ID || (config as any).metaAppId);
+  // Not "we have a Meta app id" but "this person can actually connect today" (ROUND7 §3). The checklist used to badge
+  // Connect Instagram as the next thing to do while the app sat in Development mode — the founder's father's exact
+  // dead end, one click from the dashboard. Cached and never throws, so the checklist cannot be taken down by it.
+  let connectAvailable = false;
+  try { connectAvailable = igAvailabilityCached(t).canConnect; } catch { connectAvailable = false; }
   const connected = igConnected(t);
   const companion = tableExists('companion_devices') ? !!d.prepare('SELECT 1 FROM companion_devices WHERE tenant_id = ? LIMIT 1').get(t) : false;
   const dismissed = flag('dismissed');
   const welcomeSeen = flag('welcome_seen');
+  const welcomeDone = flag('welcome_done');
+  const welcomeStep = Math.max(0, Math.min(5, Math.trunc(Number(getMeta(t, ONBOARDING_META_KEYS.welcome_step)) || 0)));
   const firstRun = count === 0 && !dismissed;
 
   let suggestedNext: SuggestedNext;
@@ -73,6 +83,8 @@ export function onboardingPayload(t: number): OnboardingPayload {
     },
     dismissed,
     welcomeSeen,
+    welcomeDone,
+    welcomeStep,
     firstRun,
     suggestedNext,
   };
@@ -82,9 +94,16 @@ onboarding.get('/', (c) => c.json(onboardingPayload(tid(c))));
 
 onboarding.post('/event', async (c) => {
   const t = tid(c);
-  const body = await c.req.json<{ key?: string }>().catch(() => ({}) as { key?: string });
+  const body = await c.req.json<{ key?: string; value?: unknown }>().catch(() => ({}) as { key?: string; value?: unknown });
   const key = String(body.key || '') as keyof typeof ONBOARDING_META_KEYS;
   if (!Object.prototype.hasOwnProperty.call(ONBOARDING_META_KEYS, key)) return c.json({ error: `key must be one of ${Object.keys(ONBOARDING_META_KEYS).join(', ')}` }, 400);
+  // Every other key is a flag stamped with the time; `welcome_step` stores which screen it is, and only ever forwards.
+  if (key === 'welcome_step') {
+    const want = Math.max(1, Math.min(5, Math.trunc(Number(body.value) || 1)));
+    const have = Math.max(0, Math.min(5, Math.trunc(Number(getMeta(t, ONBOARDING_META_KEYS.welcome_step)) || 0)));
+    if (want > have) setMeta(t, ONBOARDING_META_KEYS.welcome_step, String(want));
+    return c.json(onboardingPayload(t));
+  }
   setMeta(t, ONBOARDING_META_KEYS[key], String(Math.floor(Date.now() / 1000)));
   return c.json(onboardingPayload(t));
 });

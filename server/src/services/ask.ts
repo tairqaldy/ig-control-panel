@@ -20,6 +20,7 @@ import { keywordSearch } from './search.js';
 import { semanticSearch } from './neighbors.js';
 import { generateStructured, models, streamText } from './openai.js';
 import { crossReferenceText, isAccountQuestion, isCrossRefQuestion, ownContentProfile, recentPostsText, type OwnContentProfile } from './ig-content.js';
+import { igAvailabilityCached, igCapabilityNote } from './ig-availability.js';
 import { CATEGORIES } from '../prompts/analysis.js';
 
 export interface AskSource {
@@ -670,9 +671,13 @@ export async function planAsk(tid: number, question: string, routed: RoutedInten
     case 'analytics': {
       const an = await loadAnalytics(tid, 30);
       if (!an.connected || !an.payload) {
+        // The one answer that is not written by the model, so it needs the §3 capability check of its own.
+        const av = igAvailabilityCached(tid);
         const canned = an.connected && !an.payload
           ? `Your Instagram account is connected, but I don't have analytics for it yet. Open Analytics and press Refresh, then ask again — or ask about your saves in the meantime.`
-          : `Instagram isn't connected yet, so I can't see your numbers. Connect it from Automations (${CONNECT_PATH}) — it takes one click — and I'll answer with your reach, followers, best posting time and top posts. Meanwhile I can help with your saves: try "what do I save most" or "content brief for …".`;
+          : av.canConnect
+            ? `Instagram isn't connected yet, so I can't see your numbers. Connect it from Automations (${CONNECT_PATH}) — it takes one click — and I'll answer with your reach, followers, best posting time and top posts. Meanwhile I can help with your saves: try "what do I save most" or "content brief for …".`
+            : `I can't see your Instagram numbers: ${av.reason} Your saves are all here though — try "what do I save most" or "content brief for …".`;
         return { intent, filters, sources: [], system: ANALYTICS_SYSTEM, userMsg: q, canned, maxOutputTokens: 200 };
       }
       const wantsIdeas = /\b(post|content|idea|reel|carousel|what should i)\b/i.test(q);
@@ -726,6 +731,7 @@ export async function* askStream(tid: number, question: string, history: Array<{
     const context = buildContext(tid, sources);
     userMsg = `## Library context (${sources.length} most relevant of ${analyzedCount(tid)} analyzed saves)\n\n${context || '(nothing relevant found)'}\n\n## Question\n${question}`;
   }
+  system = `${system}\n\n${igCapabilityNote(tid)}`.trim(); // ROUND7 §3: never recommend connecting Instagram when that cannot work
   const messages = [...history.slice(-6).map((m) => ({ role: m.role, content: m.content.slice(0, 4000) })), { role: 'user' as const, content: userMsg }];
   yield* streamText({ tid, model: models(tid).ask, system, messages, effort: 'low', maxOutputTokens });
 }

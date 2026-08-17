@@ -16,7 +16,7 @@ The extension never writes to Instagram. It does not like, follow, comment, mess
 Everything below goes to your Resurfly instance (`https://resurfly.com`, or your own server if you self-host) and nowhere else. There are no third-party analytics, no ad pixels, and no other network destinations.
 
 - `GET /api/companion/state` — asks which saves your library already has (the newest 500 Instagram ids) so the extension can skip them, plus your remaining daily harvest allowance.
-- `POST /api/companion/harvest` — the new saves, at most 100 per request: link, shortcode, caption, creator username/name/avatar URL, like/comment/play counts, thumbnail and video URLs, carousel children, music or original-audio credit, location name, user tags, co-authors, paid-partnership flag, and the time the post was taken.
+- `POST /api/companion/harvest` — the new saves, at most 100 per request: link, shortcode, caption, the alt text Instagram generated for the image (and for each item of a carousel), creator username/display name/avatar URL, the creator's numeric Instagram account id and whether that account is verified, like/comment/play/view counts, whether a clip has audio, thumbnail and video URLs, carousel children, music or original-audio credit, location name, user tags, co-authors, paid-partnership flag, and the time the post was taken.
 
 That is post metadata that is visible on the posts themselves. No cookies and no Instagram tokens are included in a normal sync, and nothing about your Instagram account beyond what those posts show.
 
@@ -52,9 +52,20 @@ The build published to the Chrome Web Store requests no other hosts. The unpacke
 
 None. All the extension's code ships inside the package. It does not download or evaluate scripts at runtime.
 
+## What we declare in the Chrome Web Store
+
+Two of Google's data categories apply, and we tick exactly those two:
+
+- **Website content** — the saved posts themselves: link, caption, creator name, public like/comment counts, thumbnail and video URLs, timestamps.
+- **Authentication information** — the three `instagram.com` cookies, and only when you switch on the optional background sync described above.
+
+Not ticked, because none of it is collected: personally identifiable information, health information, financial and payment information, personal communications, location, web history, user activity.
+
+We also certify all three of Google's statements, and they are true: your data is not sold or transferred to third parties outside the approved use cases; it is not used or transferred for any purpose unrelated to the single purpose above; and it is never used to determine creditworthiness or for lending.
+
 ## Retention and deletion
 
-- Saves sent to your library stay while your account is active. After a subscription or trial ends, the library remains readable and exportable for 30 days and is then deleted. See [Privacy](/privacy).
+- Saves sent to your library stay while your account exists. After a subscription or trial ends they are not deleted automatically — the library stays readable and exportable until you delete it or ask us to. See [Privacy](/privacy).
 - The stored session (if you enabled the hand-off) is deleted the moment you turn the setting off, revoke the device, or delete your account.
 - The device token hash is deleted when you revoke the device in Settings → Companion, or when you uninstall and unpair.
 - Uninstalling the extension removes everything it kept in `chrome.storage.local`. It does not delete the saves already in your library — do that from the Library page, or delete the whole account from Billing → Delete account.
@@ -62,7 +73,23 @@ None. All the extension's code ships inside the package. It does not download or
 
 ## Selling and sharing
 
-We do not sell your data, do not share it with data brokers or advertisers, and do not use it to train models. The processors behind the hosted service are listed in [Privacy](/privacy).
+We do not sell your data, do not share it with data brokers or advertisers, and do not use it to train models. The companies behind the hosted service are named, with purpose and region, on [Subprocessors](/subprocessors).
+
+## Limited Use
+
+The Companion's use of information received from Google APIs, and of everything it reads in your browser, follows the Chrome Web Store User Data Policy, including the Limited Use requirements. Concretely:
+
+- The single purpose is to copy your own Instagram saved posts into your own Resurfly library. Everything the extension reads serves that purpose and nothing else.
+- Data is transferred to one destination — the Resurfly instance you paired it with. It is not sold, not transferred to third parties for other purposes, and not used for advertising, personalization or any credit or lending decision.
+- No human at Resurfly reads your saved posts. They are stored per account, processed automatically, and shown only to you.
+
+## Deleting what the extension sent
+
+Revoking the device in Settings → Companion invalidates its token and deletes any stored session. Deleting individual saves, the whole library or the whole account is described step by step on [Data deletion](/data-deletion).
+
+## If this changes
+
+If what the extension collects or where it sends it ever changes, we update this page **and** tell you inside the product before the change takes effect — the Options page carries the same disclosure as this policy, and a new capability that needs a Chrome permission asks you for that permission at the moment you enable it.
 
 ## Contact
 

@@ -30,15 +30,22 @@ export function automationsConfigured(tid: number): boolean {
   return !!(c.accessToken && c.igUserId);
 }
 
-/** Tenants whose Instagram account id matches one of the ids seen in a webhook payload (settings + owner env). */
+/** Tenants whose Instagram account id matches one of the ids seen in a webhook payload (settings + ig_accounts + owner env). */
 function tenantsForIgIds(ids: string[]): number[] {
   const out = new Set<number>();
   const clean = Array.from(new Set(ids.filter(Boolean)));
   if (!clean.length) return [];
   const owner = metaConfig(OWNER_TENANT).igUserId;
   if (owner && clean.includes(owner)) out.add(OWNER_TENANT);
-  const rows = db().prepare(`SELECT tenant_id FROM settings WHERE key = 'ig_user_id' AND value IN (${clean.map(() => '?').join(',')})`).all(...clean) as Array<{ tenant_id: number }>;
+  const marks = clean.map(() => '?').join(',');
+  const rows = db().prepare(`SELECT tenant_id FROM settings WHERE key = 'ig_user_id' AND value IN (${marks})`).all(...clean) as Array<{ tenant_id: number }>;
   for (const r of rows) out.add(r.tenant_id);
+  // The OAuth row is the authoritative mapping; the mirrored setting can be absent (an owner who pasted their own
+  // token, a settings row cleared by hand) and without this a live account would fall through to "no tenant".
+  try {
+    const acc = db().prepare(`SELECT tenant_id FROM ig_accounts WHERE ig_user_id IN (${marks}) OR app_scoped_id IN (${marks})`).all(...clean, ...clean) as Array<{ tenant_id: number }>;
+    for (const r of acc) out.add(r.tenant_id);
+  } catch {} // table absent before migration 004
   return Array.from(out);
 }
 
@@ -53,7 +60,14 @@ export function tenantForVerifyToken(token: string | undefined): number | null {
 
 /**
  * Candidate tenants for an incoming webhook POST: tenants whose ig_user_id appears in the payload (entry ids /
- * message recipients), else the owner tenant (single-tenant behaviour). The caller verifies the signature per candidate.
+ * message recipients). The caller verifies the signature per candidate.
+ *
+ * The fallback to the owner tenant is single-tenant behaviour and stays that way. On a hosted deployment it was a
+ * cross-account leak: after a customer disconnects, Meta keeps delivering their DMs (the deauthorize callback
+ * deliberately leaves the subscription in place), the payload matches nobody, and the owner's app secret signs every
+ * event of the app — so a stranger's Instagram id, handle and message text used to land in the operator's activity
+ * log and be evaluated against the operator's rules. `/privacy` and `/security` promise the opposite. An empty list
+ * is the correct answer there; the route logs it and stores nothing.
  */
 export function tenantsForWebhook(body: any): number[] {
   const ids: string[] = [];
@@ -65,7 +79,8 @@ export function tenantsForWebhook(body: any): number[] {
     }
   } catch {}
   const found = tenantsForIgIds(ids);
-  return found.length ? found : [OWNER_TENANT];
+  if (found.length) return found;
+  return config.hosted ? [] : [OWNER_TENANT];
 }
 
 /* ------------------------------------------------------------------ */

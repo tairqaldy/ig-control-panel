@@ -7,6 +7,8 @@ import { motion } from 'motion/react';
 import { ArrowRight, ArrowDown, MessageSquareText, Waypoints, Sparkles, Puzzle, Terminal, Zap, BarChart3 } from 'lucide-react';
 import { MarketingPage, PublicHeader, PublicFooter, Section, PricingSection, FAQ, CheckList, COMPANION_URL, HARVESTER_DOC_URL } from '../components/marketing';
 import { Frame, SHOTS } from '../components/marketing/Frame';
+import { usePlansCatalog } from '../components/Pricing';
+import { trialCardChip, trialCardSentence } from '../lib/plans';
 import { ReelRiver } from '../components/marketing/ReelRiver';
 import { SaveShowcase } from '../components/marketing/SaveShowcase';
 import { TourVideo } from '../components/marketing/TourVideo';
@@ -22,6 +24,9 @@ const riseInView = (delay = 0) => ({ initial: { opacity: 0, y: 14 }, whileInView
 
 export default function Landing() {
   const loc = useLocation();
+  // The trial line is not a constant any more: with the signup paywall on, "no card" is the first thing we would
+  // get wrong, and the visitor finds out one click later on /start.
+  const { catalog } = usePlansCatalog();
   useEffect(() => { document.title = 'Resurfly — every reel you saved, turned into notes you can search'; return () => { document.title = 'Resurfly'; }; }, []);
   // /#tour from the header on another page: the section exists only after this lazy page mounts, so scroll by hand.
   useEffect(() => {
@@ -48,7 +53,7 @@ export default function Landing() {
             <Link to="/signup" className="btn btn-primary py-2.5 px-5 text-[14px]">Start free trial <ArrowRight size={15} /></Link>
             <a href="#tour" className="btn py-2.5 px-4 text-[14px]">See how it works <ArrowDown size={14} className="text-muted" /></a>
           </motion.div>
-          <motion.div {...rise(0.35)} className="mt-4 text-[12.5px] text-muted">Three days free · no card · your newest 100 saves analyzed</motion.div>
+          <motion.div {...rise(0.35)} className="mt-4 text-[12.5px] text-muted">{catalog.trialDays} days free · {trialCardChip(catalog)} · your newest 100 saves analyzed</motion.div>
         </div>
         <motion.div initial={{ opacity: 0, y: 18, scale: 0.985 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ delay: 0.2, duration: 0.7, ease }} className="relative lg:-mr-6">
           <div className="absolute -inset-8 rounded-[32px] bg-accent/10 blur-3xl -z-10" aria-hidden />
@@ -138,7 +143,7 @@ export default function Landing() {
       <section className="w-full mx-auto max-w-6xl px-4 sm:px-6 pb-4">
         <motion.div {...riseInView()} className="card p-8 sm:p-12 text-center">
           <div className="display text-[32px] sm:text-[44px] leading-[1.02] tracking-tight text-balance">Your saves are already there. Go get them.</div>
-          <p className="mt-4 text-[14.5px] text-muted max-w-xl mx-auto">Three days free, no card. The first hundred saves are usually analyzed within twenty minutes of the import landing.</p>
+          <p className="mt-4 text-[14.5px] text-muted max-w-xl mx-auto">{catalog.trialDays} days free. {trialCardSentence(catalog)} The first hundred saves are usually analyzed within twenty minutes of the import landing.</p>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <Link to="/signup" className="btn btn-primary py-2.5 px-5">Start free trial <ArrowRight size={15} /></Link>
             <Link to="/pricing" className="btn py-2.5 px-4">See pricing</Link>

@@ -43,11 +43,23 @@ const PRODUCTS = [
   { key: 'credits', name: 'Resurfly credits', description: 'Prepaid credits for analysis, Ask answers and automated replies. 1 credit = 1 save analyzed = 1 Ask answer = 20 automated replies.' },
 ];
 
+/**
+ * Free days live on the PRICE in Paddle Billing (`trial_period`), not on the subscription — so each plan needs a
+ * second price that is identical apart from the trial. Signup checkout uses the `_trial` price (card now, first
+ * charge after TRIAL_DAYS); an in-app upgrade uses the plain price, because those days have already been used.
+ */
+const TRIAL_DAYS = Math.max(1, Number(process.env.TRIAL_DAYS || env.TRIAL_DAYS || 3) || 3);
+const trial = { interval: 'day', frequency: TRIAL_DAYS };
+
 const PRICES = [
   { key: 'pro_month', product: 'pro', name: 'Monthly', description: 'Pro monthly', amount: 1900, interval: 'month' },
   { key: 'pro_year', product: 'pro', name: 'Yearly', description: 'Pro yearly (2 months free)', amount: 14400, interval: 'year' },
   { key: 'studio_month', product: 'studio', name: 'Monthly', description: 'Studio monthly', amount: 4900, interval: 'month' },
   { key: 'studio_year', product: 'studio', name: 'Yearly', description: 'Studio yearly (save 41%)', amount: 34800, interval: 'year' },
+  { key: 'pro_month_trial', product: 'pro', name: `Monthly, ${TRIAL_DAYS} days free`, description: `Pro monthly after ${TRIAL_DAYS} free days`, amount: 1900, interval: 'month', trial },
+  { key: 'pro_year_trial', product: 'pro', name: `Yearly, ${TRIAL_DAYS} days free`, description: `Pro yearly after ${TRIAL_DAYS} free days`, amount: 14400, interval: 'year', trial },
+  { key: 'studio_month_trial', product: 'studio', name: `Monthly, ${TRIAL_DAYS} days free`, description: `Studio monthly after ${TRIAL_DAYS} free days`, amount: 4900, interval: 'month', trial },
+  { key: 'studio_year_trial', product: 'studio', name: `Yearly, ${TRIAL_DAYS} days free`, description: `Studio yearly after ${TRIAL_DAYS} free days`, amount: 34800, interval: 'year', trial },
   { key: 'credits_500', product: 'credits', name: '500 credits', description: '500 credits', amount: 1200, credits: 500 },
   { key: 'credits_2000', product: 'credits', name: '2,000 credits', description: '2,000 credits', amount: 3900, credits: 2000 },
   { key: 'credits_6000', product: 'credits', name: '6,000 credits', description: '6,000 credits', amount: 9900, credits: 6000 },
@@ -56,6 +68,8 @@ const PRICES = [
 const ENV_NAME = {
   pro_month: 'PADDLE_PRICE_PRO_MONTH', pro_year: 'PADDLE_PRICE_PRO_YEAR',
   studio_month: 'PADDLE_PRICE_STUDIO_MONTH', studio_year: 'PADDLE_PRICE_STUDIO_YEAR',
+  pro_month_trial: 'PADDLE_PRICE_PRO_MONTH_TRIAL', pro_year_trial: 'PADDLE_PRICE_PRO_YEAR_TRIAL',
+  studio_month_trial: 'PADDLE_PRICE_STUDIO_MONTH_TRIAL', studio_year_trial: 'PADDLE_PRICE_STUDIO_YEAR_TRIAL',
   credits_500: 'PADDLE_PRICE_CREDITS_500', credits_2000: 'PADDLE_PRICE_CREDITS_2000', credits_6000: 'PADDLE_PRICE_CREDITS_6000',
 };
 
@@ -76,7 +90,9 @@ const priceId = {};
 const stale = [];
 for (const pr of PRICES) {
   const match = existingPrices.find((x) => x.custom_data?.key === pr.key && x.product_id === productId[pr.product]);
-  if (match && Number(match.unit_price?.amount) === pr.amount) { priceId[pr.key] = match.id; console.log(`price   ${pr.key.padEnd(13)} exists  ${match.id} ($${(pr.amount / 100).toFixed(2)})`); continue; }
+  // A price whose amount OR free period no longer matches is archived and recreated: Paddle cannot edit either in place.
+  const trialOk = Number(match?.trial_period?.frequency || 0) === (pr.trial ? pr.trial.frequency : 0);
+  if (match && Number(match.unit_price?.amount) === pr.amount && trialOk) { priceId[pr.key] = match.id; console.log(`price   ${pr.key.padEnd(18)} exists  ${match.id} ($${(pr.amount / 100).toFixed(2)}${pr.trial ? `, ${pr.trial.frequency}d free` : ''})`); continue; }
   if (match) stale.push({ id: match.id, key: pr.key, was: match.unit_price?.amount });
   const body = {
     product_id: productId[pr.product],
@@ -85,16 +101,17 @@ for (const pr of PRICES) {
     unit_price: { amount: String(pr.amount), currency_code: 'USD' },
     quantity: { minimum: 1, maximum: 1 },
     tax_mode: 'account_setting',
-    custom_data: pr.credits ? { key: pr.key, kind: 'credits', credits: String(pr.credits) } : { key: pr.key, kind: 'subscription', plan: pr.product, interval: pr.interval },
+    custom_data: pr.credits ? { key: pr.key, kind: 'credits', credits: String(pr.credits) } : { key: pr.key, kind: 'subscription', plan: pr.product, interval: pr.interval, ...(pr.trial ? { trial_days: String(pr.trial.frequency) } : {}) },
     ...(pr.interval ? { billing_cycle: { interval: pr.interval, frequency: 1 } } : {}),
+    ...(pr.trial ? { trial_period: { interval: pr.trial.interval, frequency: pr.trial.frequency } } : {}),
   };
   const created = await call('POST', '/prices', body);
   priceId[pr.key] = created.data.id;
-  console.log(`price   ${pr.key.padEnd(13)} created ${created.data.id} ($${(pr.amount / 100).toFixed(2)})`);
+  console.log(`price   ${pr.key.padEnd(18)} created ${created.data.id} ($${(pr.amount / 100).toFixed(2)}${pr.trial ? `, ${pr.trial.frequency}d free` : ''})`);
 }
 
 for (const s of stale) {
-  try { await call('PATCH', `/prices/${s.id}`, { status: 'archived' }); console.log(`price   ${s.key.padEnd(13)} archived old ${s.id} (was $${(Number(s.was) / 100).toFixed(2)})`); }
+  try { await call('PATCH', `/prices/${s.id}`, { status: 'archived' }); console.log(`price   ${s.key.padEnd(18)} archived old ${s.id} (was $${(Number(s.was) / 100).toFixed(2)})`); }
   catch (e) { console.warn(`could not archive ${s.id}: ${e.message}`); }
 }
 
@@ -102,3 +119,5 @@ console.log('\n--- env (Railway + local .env) ---');
 for (const [key, name] of Object.entries(ENV_NAME)) console.log(`${name}=${priceId[key]}`);
 console.log(`PADDLE_ENV=${MODE === 'live' || MODE === 'production' ? 'production' : 'sandbox'}`);
 console.log('\nCredit packs carry custom_data.credits — the webhook reads that, so adding a pack later needs no code change.');
+console.log(`The four *_TRIAL price ids carry Paddle's ${TRIAL_DAYS}-day free period; signup checkout uses them, an in-app upgrade uses the plain ids.`);
+console.log('Without all four, TRIAL_REQUIRES_CARD turns itself off and signups keep working without a card.');

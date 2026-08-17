@@ -52,9 +52,35 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(path.join(DATA_DIR, 'media'), { recursive: true });
 fs.mkdirSync(path.join(DATA_DIR, 'tmp'), { recursive: true });
 
-/** Session secret: env or auto-generated once and persisted next to the DB. */
+/**
+ * Session secret: env, or auto-generated once and persisted next to the DB.
+ *
+ * The file fallback is what lets a self-hoster run `docker run` with no configuration at all, and it stays. It is
+ * also, on a hosted deployment, the key to the AES-256-GCM-encrypted Instagram tokens sitting on the same volume as
+ * the database — so `/security` may not claim the key lives only in the deployment environment unless it does.
+ * A hosted boot without SESSION_SECRET says so, loudly, every time.
+ */
 function loadSessionSecret(): string {
   if (process.env.SESSION_SECRET && process.env.SESSION_SECRET.length >= 16) return process.env.SESSION_SECRET;
+  const hosted = /^(1|true|yes|on)$/i.test(String(process.env.HOSTED || ''));
+  if (hosted) {
+    // Refusing to boot is the kind failure here. The alternative — generating a key and writing it onto the same volume
+    // as the ciphertext it protects — is silent, and a snapshot of that volume then holds both halves. It is also
+    // unrecoverable in the other direction: once tokens are encrypted with a generated key, setting SESSION_SECRET
+    // later signs everybody out and makes every stored Instagram token undecryptable. So a hosted deployment must be
+    // told the key, and a hosted deployment that has lost it must be fixed by a human, not papered over at 3am.
+    const f = path.join(DATA_DIR, '.session-secret');
+    const generated = fs.existsSync(f);
+    throw new Error(
+      `SESSION_SECRET is not set and HOSTED is on, so the server will not start.\n\n` +
+      `It is the key that encrypts Instagram access tokens and signs session cookies. Set it in the deployment environment ` +
+      `(Railway → Variables) to a long random string.\n\n` +
+      (generated
+        ? `IMPORTANT: this deployment has been running on a generated key at ${f}. Set SESSION_SECRET to the exact contents of that file, ` +
+          `or every logged-in user is signed out and every stored Instagram token becomes undecryptable.\n`
+        : `Generate one with: node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"\n`),
+    );
+  }
   const f = path.join(DATA_DIR, '.session-secret');
   try {
     const existing = fs.readFileSync(f, 'utf8').trim();
@@ -85,11 +111,14 @@ export const config = {
   // OpenAI
   openaiApiKey: process.env.OPENAI_API_KEY || '',
   openaiBaseUrl: process.env.OPENAI_BASE_URL || undefined,
-  analysisModel: process.env.OPENAI_MODEL || 'gpt-5.4-mini',
+  analysisModel: process.env.OPENAI_MODEL || 'gpt-5.4-nano',   // nano by default: analysis runs thousands of times and is the whole COGS story; set OPENAI_MODEL to override
   transcribeModel: process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe',
   embedModel: process.env.OPENAI_EMBED_MODEL || 'text-embedding-3-small',
   embedDims: num(process.env.EMBED_DIMS, 512),
-  askModel: process.env.OPENAI_ASK_MODEL || process.env.OPENAI_MODEL || 'gpt-5.4-mini',
+  // Deliberately NOT falling back to OPENAI_MODEL: analysis runs thousands of times and wants the cheap model,
+  // Ask runs a handful of times and is the thing people judge the product by. Cutting Ask to nano saves cents and
+  // costs the answer quality round 6 was spent on.
+  askModel: process.env.OPENAI_ASK_MODEL || 'gpt-5.4-mini',
   visionFrames: num(process.env.VISION_FRAMES, 4),
 
   // Pipeline
@@ -126,7 +155,12 @@ export const config = {
       studioMonth: process.env.PADDLE_PRICE_STUDIO_MONTH || '',
       studioYear: process.env.PADDLE_PRICE_STUDIO_YEAR || '',
     },
+    // The same prices with `trial_period` on them (PADDLE_PRICE_*_TRIAL) live in services/paywall.ts, read at call
+    // time like the credit packs — fixing the env of a running deploy must not need a rebuild.
   },
+
+  /** Card before the trial starts (ROUND7 §1). Hosted only; self-hosters never see a paywall. Forced off when the trial price ids are missing — see services/paywall.ts. */
+  trialRequiresCard: bool(process.env.TRIAL_REQUIRES_CARD, bool(process.env.HOSTED, false)),
 };
 
 export type Config = typeof config;

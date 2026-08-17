@@ -6,6 +6,7 @@ import { useAuth } from '../lib/store';
 import { Logo } from '../components/ui';
 import { MarketingPage, PublicHeader, PublicFooter, GITHUB_URL, SUPPORT_EMAIL } from '../components/marketing';
 import { usePlansCatalog } from '../components/Pricing';
+import { trialCardClause, trialCardSentence } from '../lib/plans';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -45,7 +46,7 @@ export default function Signup() {
             Three days. Your newest <em className="text-accent not-italic">100 saves</em>, analyzed.
           </motion.h1>
           <motion.p initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, duration: 0.6 }} className="mt-5 text-[15px] text-ink-2 leading-relaxed">
-            Enough to see what the notes look like on your own library and to ask real questions. If it's not for you, export or delete and walk away — no card was ever entered.
+            {`Enough to see what the notes look like on your own library and to ask real questions. If it's not for you, export or delete and walk away. ${trialCardSentence(catalog)}`}
           </motion.p>
           <motion.ul initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.25 }} className="mt-6 space-y-2 text-[13.5px] text-ink-2">
             {[`${trial?.limits.analyzeTotal ?? 100} saves analyzed — transcript, summary, key points, tags`, `${trial?.limits.askPerMonth ?? 20} questions with cited answers`, 'Graph, daily resurface, one DM automation rule, analytics once Instagram is connected', 'Full export in JSON, CSV, Markdown or Obsidian at any time', 'After the trial: browse-only until you upgrade; nothing is deleted for 30 days'].map((t) => (
@@ -61,7 +62,7 @@ export default function Signup() {
             <div className="lg:hidden flex items-center gap-2.5 mb-6"><Logo size={24} /><span className="display text-[22px]">Resurfly</span></div>
             <div className="eyebrow mb-1">Start your free trial</div>
             <h2 className="display text-[28px] mb-1">Create your account</h2>
-            <div className="mb-5 text-[12.5px] text-muted">{catalog.trialDays} days free · no card needed{intendedPlan && intendedPlan !== 'trial' ? ` · you can upgrade to ${intendedPlan[0].toUpperCase()}${intendedPlan.slice(1)} right after` : ''}</div>
+            <div className="mb-5 text-[12.5px] text-muted">{catalog.trialDays} days free · {trialCardClause(catalog)}{intendedPlan && intendedPlan !== 'trial' ? ` · you can upgrade to ${intendedPlan[0].toUpperCase()}${intendedPlan.slice(1)} right after` : ''}</div>
             {!auth.signupsEnabled && (
               <div className="mb-4 flex items-start gap-2 rounded-xl border border-warn/40 bg-warn-soft p-3 text-[12.5px] text-ink-2"><AlertTriangle size={16} className="text-warn shrink-0 mt-0.5" /><div>Signups are closed right now. You can still <a className="underline" href={GITHUB_URL} target="_blank" rel="noreferrer">self-host</a> or email {SUPPORT_EMAIL} for an invite.</div></div>
             )}

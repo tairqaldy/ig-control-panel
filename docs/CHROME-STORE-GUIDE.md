@@ -85,7 +85,7 @@ Paste from `extension/STORE-LISTING.md`; the shape of each field:
 | **Screenshots** | 1280×800, at least one, up to five: `store-1-popup-paired.png`, `store-2-popup-unpaired.png`, `store-3-popup-login-needed.png`, `store-4-options.png`. They must show the actual extension UI — mock-ups or marketing collages get flagged. |
 | **Small promo tile / marquee** | Optional. Skip; they only matter for featuring. |
 | **Homepage URL** | `https://resurfly.com` |
-| **Support URL** | `https://resurfly.com/support` (or the same homepage — it must resolve) |
+| **Support URL** | `https://resurfly.com` — there is no `/support` page, and an unknown path redirects to the login screen, which is exactly the "behind a login" failure reviewers check for. Support e-mail: `hello@resurfly.com`. |
 | **Mature content** | No |
 
 A feature described in the listing has to work in the shipped package. A listing that promises something the code
@@ -194,7 +194,7 @@ reasons and our answer to each.
 
 | Rejection reason | Why it is raised | Our answer |
 | --- | --- | --- |
-| **Broad host permissions** — `<all_urls>`, `*://*/*` | Sends the item straight into extended manual review [2] and reads as "wants every site" | The store build declares two hosts: `www.instagram.com` and `resurfly.com`. No wildcard anywhere; `validate.mjs` fails the build if one appears. |
+| **Broad host permissions** — `<all_urls>`, `*://*/*` | Sends the item straight into extended manual review [2] and reads as "wants every site" | The store build declares two hosts: `www.instagram.com` and `resurfly.com`. No wildcard anywhere; `build-zip.mjs` drops `optional_host_permissions` and fails the store build if a wildcard host appears (`validate.mjs` rejects `<all_urls>` and `*://*/*` in the source manifest). |
 | **Excessive / unused permissions** (Purple Potassium [1]) | A permission in the manifest that no code path uses | Four permissions, each used by named code: `alarms` (background.js timers), `storage` (lib/store.js), `contextMenus` (one instagram.com item), `cookies` optional and requested at the moment the user flips the switch. |
 | **Sensitive execution permissions** — `cookies`, `tabs`, `downloads` | Reviewers verify these are genuinely necessary [2] | `cookies` is declared **optional**, never requested at install, requested only inside the user gesture that enables background harvesting, and handed back with `chrome.permissions.remove` when the switch is turned off. The extension is fully functional without it. |
 | **Single purpose / multiple unrelated functions** (Red family [1]) | Two products in one package | One purpose: move the user's saved posts into their own library. No ads, no search modification, no unrelated features. The context-menu item and the popup both do the same one thing. |

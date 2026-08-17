@@ -47,6 +47,8 @@ function deriveFromWorker(w: WorkerStatus | null): OnboardingState {
       companion: { done: false },
     },
     dismissed,
+    welcomeSeen: localFlag('rs-welcome-seen'),
+    welcomeDone: localFlag('rs-welcome-done'),
     firstRun: total === 0 && !dismissed,
     suggestedNext: total === 0 ? 'import' : analyzed === 0 ? 'wait' : !localFlag('rs-onboarding-asked') ? 'ask' : !localFlag('rs-onboarding-explored') ? 'explore' : 'done',
     derived: true,
@@ -89,7 +91,10 @@ export function useOnboardingEvent() {
       if (key === 'dismissed') setLocalFlag('rs-onboarding-dismissed');
       if (key === 'explored') setLocalFlag('rs-onboarding-explored');
       if (key === 'asked') setLocalFlag('rs-onboarding-asked');
-      try { await api.post('/api/onboarding/event', { key }); } catch (e) { if (!(e instanceof ApiError && (e.status === 404 || e.status === 501 || e.status === 405))) throw e; }
+      if (key === 'welcome_seen') setLocalFlag('rs-welcome-seen');
+      if (key === 'welcome_done') setLocalFlag('rs-welcome-done');
+      // 400 = a server that predates this key (the local mirror above still remembers).
+      try { await api.post('/api/onboarding/event', { key }); } catch (e) { if (!(e instanceof ApiError && (e.status === 400 || e.status === 404 || e.status === 501 || e.status === 405))) throw e; }
     },
     onSettled: () => { qc.invalidateQueries({ queryKey: ONBOARDING_KEY }); },
   });
@@ -113,6 +118,8 @@ function setLocalFlag(k: string, v = true) { try { if (v) localStorage.setItem(k
 /** Set when the user leaves /welcome via "Skip" or the last step; the '/' → '/welcome' redirect stops after that. */
 export const markWelcomeDone = () => setLocalFlag('rs-welcome-done');
 export const welcomeDone = () => localFlag('rs-welcome-done');
+/** Mirrored by useOnboardingEvent('welcome_seen'); read here so the redirect stops the instant the wizard opens, not when the POST lands. */
+const welcomeSeenLocally = () => localFlag('rs-welcome-seen');
 
 /**
  * Hosted first-run redirect ('/' → '/welcome'): only when hosted, the tenant has no items, never dismissed the checklist,
@@ -126,7 +133,7 @@ export function useFirstRunRedirect(): boolean | null {
   if (q.isLoading && !q.data) return null;
   const d = q.data;
   if (!d) return false;
-  return !!(d.firstRun && !d.dismissed && !d.welcomeSeen && !welcomeDone());
+  return !!(d.firstRun && !d.dismissed && !d.welcomeSeen && !d.welcomeDone && !welcomeSeenLocally() && !welcomeDone());
 }
 
 /* ------------------------------------------------------------ Ask suggestions ------------------------------------------------------------ */
@@ -217,6 +224,8 @@ export function OnboardingChecklist({ className, welcomeLinks = false }: { class
     if (welcomeLinks && (r.kind === 'import' || r.kind === 'companion')) return nav('/welcome?step=1');
     if (welcomeLinks && r.kind === 'wait') return nav('/welcome?step=2');
     if (welcomeLinks && r.kind === 'ask') return nav('/welcome?step=3');
+    // Screen 4 checks whether connecting is possible before offering a button; /automations only says so afterwards.
+    if (welcomeLinks && r.kind === 'connect' && !r.done) return nav('/welcome?step=4');
     nav(r.cta!.to);
   };
 

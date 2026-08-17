@@ -87,3 +87,21 @@ export function copyText(text: string): Promise<void> {
 }
 
 export function isMac(): boolean { return typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform); }
+
+/**
+ * Is this a phone or tablet — a device where a Chrome extension cannot be installed at all?
+ *
+ * Onboarding screen 1 used to offer "Install the Companion" on a phone with no word that a computer is needed, and
+ * the day the extension reaches the Chrome Web Store that would have become the *primary* button on a device where
+ * the flow cannot be finished. Deliberately conservative: only obvious mobile/tablet user agents and touch-only
+ * pointers count, so a desktop is never told it cannot install something it can.
+ */
+export function isHandheld(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  if (/Android|iPhone|iPod|IEMobile|Opera Mini|Mobile Safari/i.test(ua)) return true;
+  // iPadOS reports itself as a Mac; the touch points give it away.
+  if (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1) return true;
+  if (/iPad|Tablet/i.test(ua)) return true;
+  try { return window.matchMedia('(pointer: coarse)').matches && window.innerWidth < 900; } catch { return false; }
+}

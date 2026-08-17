@@ -54,7 +54,7 @@ Pricing that keeps a healthy margin and stays honest (these are the plans the ho
 | Plan | Price | Allowance | Our cost (typical user) | Gross margin |
 |---|---|---|---|---|
 | **Self-host** | $0 | this repo, your keys, your server | — | — |
-| **Trial** | free, 3 days | newest **100** saves analyzed on Standard, 20 Ask questions, 1 automation rule, 100 sends | ≈ $0.90 once | acquisition cost |
+| **Trial** | free, 3 days, card at signup (§3b) | newest **100** saves analyzed on Standard, 20 Ask questions, 1 automation rule, 100 sends | ≈ $0.90 once | acquisition cost |
 | **Free** (after trial) | $0 | browse, search, export what was analyzed; no new analysis, 5 Ask/mo, automations paused | ≈ $0.03/mo | — |
 | **Pro** | **$19 / mo** or **$144 / yr** ($12 / mo, 37% less) | up to **2,000** saves analyzed (300 new / mo), 300 Ask / mo, 10 rules, 5,000 sends / mo, 20 harvests / day, priority queue ×2 | month 1 ≈ $13 (1,500-save library on Standard) then ≈ $4.2 / mo | month 1 ≈ 32%, then ≈ 78% (annual: ≈ 59% over the year) |
 | **Studio** | **$49 / mo** or **$348 / yr** ($29 / mo, 41% less) | up to **10,000** saves (2,000 new / mo), 1,500 Ask / mo, unlimited rules, 25,000 sends / mo, 50 harvests / day, priority queue ×4 | month 1 ≈ $38 (5,000-save library) then ≈ $8 / mo | month 1 ≈ 22%, then ≈ 84% |
@@ -68,6 +68,19 @@ Notes:
 - Worst case for Studio (someone with 10,000 saves analyzed in month 1 on Standard ≈ $76) is a −$27 month; recovered by month 2. If that becomes common, the cheap guard is: Standard for the first 2,000 saves of a library, Economy for the rest (quality on old saves matters less) — this is a one-line policy in the worker, not implemented yet.
 - Show the cost table on the pricing page — "your $19 covers about $4 of API + storage in a normal month; the rest pays for the servers, the harvester upkeep, and the person answering support."
 - Credits exist so a heavy month does not force an upgrade: when the allowance runs out the app offers both paths. They are prepaid, never expire, and are only spent on analysis, Ask answers and automated replies — never on imports, rule slots or the per-minute Ask rate limit, so a top-up can never look like a way around a rate limit.
+
+## 3b. Card at signup (the trial is 3 days, not 3 days of guessing)
+
+Since round 7 the hosted signup asks for a card **before** the free days start (`TRIAL_REQUIRES_CARD`, on whenever `HOSTED` is on; self-hosted installs never see it).
+
+- **What is collected**: a card, through Paddle's checkout overlay. Paddle stores it; we never see the number. Nothing is charged during the free days.
+- **How long is free**: 3 days (`TRIAL_DAYS`). The free period lives on the Paddle *price* (`trial_period`), so Paddle — not our clock — decides when the first charge happens. There are four trial-enabled prices (`PADDLE_PRICE_*_TRIAL`) alongside the four plain ones; signup checkout buys the trial price, an in-app upgrade buys the plain one, because those days have already been used.
+- **First charge**: day 3, for the plan and period chosen at signup. The exact date is on the signup screen before confirming and on the Billing page while the trial runs; it comes from Paddle's `next_billed_at`, not from our own arithmetic.
+- **Cancelling**: one click in Billing (the Paddle portal's cancel URL, surfaced directly — no e-mail, no support ticket). Cancel before the first charge and nothing is ever charged. Cancel later and access runs to the end of the period already paid for.
+- **After cancellation**: the account falls back to Free — browse, search and export everything already analyzed — under the 30-day retention rule in §4. The paywall does not come back: once a card has been on file the account is never walled off again.
+- **Accounts that predate the rule are grandfathered.** Migration 009 backfills every existing tenant to `requires_payment = 0` and nothing ever sets it back to 1; only a signup made while the flag is on starts locked. Somebody who joined under the old rules must never meet a wall.
+- **Why it fails open**: locking somebody out is only safe if they can actually pay and actually get back in. If any of the four trial price ids, `PADDLE_CLIENT_TOKEN`, `PADDLE_WEBHOOK_SECRET` or `PADDLE_API_KEY` is missing, the flag turns itself off, logs why once, and lists the missing variables in the owner's setup issues. (The API key is on that list because it is what opens the customer portal: without it the Billing page shows no cancel control at all, and "cancel any time, one click" would be a promise made to somebody whose card we had just taken.) A half-configured deploy loses a card, not its customers.
+- **The trade this makes**: fewer signups, far fewer tire-kickers, and the ≈$0.90 of analysis a trial costs is spent on people who have at least decided to pay. The honest cost is that some people will not hand over a card to try software, which is why the free days, the exact charge date and the one-click cancel are all stated on the same screen as the button.
 
 ## 4. Data retention (hosted)
 

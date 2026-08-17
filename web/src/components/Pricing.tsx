@@ -34,8 +34,11 @@ export function IntervalToggle({ value, onChange, className, catalog }: { value:
   );
 }
 
-export function priceLabel(p: PlanCatalogEntry, iv: Interval): { amount: string; per: string; note?: string } {
-  if (p.id === 'trial') return { amount: '$0', per: `for ${DEFAULT_CATALOG.trialDays} days`, note: 'No card needed' };
+/* `catalog` decides the trial card's small print: with the signup paywall on, "No card needed" is the first false
+   promise a visitor reads. Optional so the older call sites keep working; they pass it. */
+export function priceLabel(p: PlanCatalogEntry, iv: Interval, catalog?: PlansCatalog): { amount: string; per: string; note?: string } {
+  const c = catalog ?? DEFAULT_CATALOG;
+  if (p.id === 'trial') return { amount: '$0', per: `for ${c.trialDays} days`, note: c.trialRequiresCard ? 'Card required, nothing charged' : 'No card needed' };
   if (iv === 'year') { const y = p.yearly ?? 0; return { amount: `$${(y / 12).toFixed(y % 12 === 0 ? 0 : 2)}`, per: '/ month, billed yearly', note: `$${y} a year` }; }
   return { amount: `$${p.monthly ?? 0}`, per: '/ month', note: p.yearly ? `or $${p.yearly} a year` : undefined };
 }
@@ -50,7 +53,7 @@ export function PricingCards({ catalog, interval, onChoose, current, busyPlan, c
     <>
     <div className={cn('grid gap-4', plans.length === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2')}>
       {plans.map((p, i) => {
-        const price = priceLabel(p, interval);
+        const price = priceLabel(p, interval, catalog);
         const isCurrent = current === p.id;
         const featured = p.id === 'pro';
         const label = ctaLabel ? ctaLabel(p) : p.id === 'trial' ? 'Start free trial' : `Get ${p.name}`;

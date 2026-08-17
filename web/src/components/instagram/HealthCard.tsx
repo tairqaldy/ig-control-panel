@@ -9,7 +9,7 @@ import { api } from '../../lib/api';
 import type { CheckStatus, DiagnosticCheck } from '../../lib/types-automations';
 import { Skeleton } from '../ui';
 import { cn, fmtAgo } from '../../lib/utils';
-import { DIAGNOSTICS_KEY, useDiagnostics } from './useAutomations';
+import { DIAGNOSTICS_KEY, useDiagnostics, useIgAvailability } from './useAutomations';
 
 const DOCS = 'https://github.com/tairqaldy/resurfly/blob/main/docs/AUTOMATIONS.md';
 
@@ -26,11 +26,23 @@ function fixHref(href: string): string {
   return `https://github.com/tairqaldy/resurfly/blob/main/${href}`;
 }
 
-function FixButton({ check, onAction, busy }: { check: DiagnosticCheck; onAction: (action: string) => void; busy: boolean }) {
+/** The diagnostics fix that starts the OAuth round trip — the one that must never be offered when it cannot work. */
+const CONNECT_HREF = '/api/instagram/connect';
+
+function FixButton({ check, onAction, onAddRule, canConnect, busy }: { check: DiagnosticCheck; onAction: (action: string) => void; onAddRule?: () => void; canConnect: boolean; busy: boolean }) {
   const fix = check.fix;
   if (!fix?.label) return null;
   if (fix.action) return <button onClick={() => onAction(fix.action!)} disabled={busy} className="btn btn-sm shrink-0"><RefreshCw size={12} className={cn(busy && 'animate-spin')} /> {fix.label}</button>;
   if (!fix.href) return null;
+  // Three checks fail with "Connect Instagram" before an account is attached, and they collapse into the single most
+  // prominent control on the page. While our Meta app is in Development mode that control sat six pixels under the
+  // notice explaining that Instagram cannot be connected, and led to Meta's error page (ROUND7 §3/§5).
+  if (fix.href === CONNECT_HREF && !canConnect) return null;
+  // "Add a rule" pointed at /automations, which is the only page this card is rendered on: clicking it did a full
+  // page load of the URL you were already looking at and opened nothing. The page hands us the builder instead.
+  if (fix.href === '/automations' && onAddRule) {
+    return <button onClick={onAddRule} className="btn btn-sm shrink-0">{fix.label} <ArrowRight size={12} /></button>;
+  }
   const href = fixHref(fix.href);
   const external = /^https?:\/\//i.test(href);
   return (
@@ -40,7 +52,7 @@ function FixButton({ check, onAction, busy }: { check: DiagnosticCheck; onAction
   );
 }
 
-function Row({ check, onAction, busyAction }: { check: DiagnosticCheck; onAction: (a: string) => void; busyAction: string | null }) {
+function Row({ check, onAction, onAddRule, canConnect, busyAction }: { check: DiagnosticCheck; onAction: (a: string) => void; onAddRule?: () => void; canConnect: boolean; busyAction: string | null }) {
   const tone = TONE[check.status] || TONE.ok;
   return (
     <li className="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3">
@@ -57,7 +69,7 @@ function Row({ check, onAction, busyAction }: { check: DiagnosticCheck; onAction
           </ul>
         ) : null}
       </div>
-      <FixButton check={check} onAction={onAction} busy={busyAction === check.fix?.action} />
+      <FixButton check={check} onAction={onAction} onAddRule={onAddRule} canConnect={canConnect} busy={busyAction === check.fix?.action} />
     </li>
   );
 }
@@ -66,9 +78,13 @@ function Row({ check, onAction, busyAction }: { check: DiagnosticCheck; onAction
  * The diagnostics checklist. Green / amber / red rows with one sentence each and a fix where there is one.
  * Collapsed to the problem rows when everything else is fine, so a healthy account stays quiet.
  */
-export function HealthCard({ className }: { className?: string }) {
+export function HealthCard({ className, onAddRule }: { className?: string; onAddRule?: () => void }) {
   const qc = useQueryClient();
   const q = useDiagnostics();
+  const av = useIgAvailability();
+  /* Unknown (endpoint missing, still loading) means "do not hide a button that would have worked"; only a definite
+     "no" suppresses the Connect fix. */
+  const canConnect = !av.data || !!av.data.unavailable || av.data.canConnect;
   const [open, setOpen] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
 
@@ -137,7 +153,7 @@ export function HealthCard({ className }: { className?: string }) {
       </div>
       <AnimatePresence initial={false} mode="popLayout">
         <motion.ul key={open ? 'all' : 'some'} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.12 }} className="divide-y divide-line">
-          {shown.map((c) => <Row key={c.id} check={c} onAction={(a) => run.mutate(a)} busyAction={busyAction} />)}
+          {shown.map((c) => <Row key={c.id} check={c} onAction={(a) => run.mutate(a)} onAddRule={onAddRule} canConnect={canConnect} busyAction={busyAction} />)}
         </motion.ul>
       </AnimatePresence>
     </section>

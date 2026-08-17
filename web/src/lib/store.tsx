@@ -14,6 +14,27 @@ interface AuthState { authenticated: boolean; username: string | null; setupIssu
 interface AuthCtx extends AuthState { login: (u: string, p: string) => Promise<void>; signup: (email: string, password: string, name?: string) => Promise<void>; logout: () => Promise<void>; refresh: () => void }
 const AuthContext = createContext<AuthCtx | null>(null);
 
+/**
+ * Per-account browser state that must never survive a change of session: the /welcome wizard's step and chosen
+ * import method, the "welcome seen / done" flags, the checklist dismissal and the pending-checkout marker.
+ *
+ * They were plain global localStorage keys, so signing a second person up in the same browser (the founder testing,
+ * then his father) skipped the wizard entirely for them — `welcomeSeen && welcomeDone` were already true — or opened
+ * it on "That's the setup done" with an empty library, and could show them "Confirming with Paddle…" for a payment
+ * somebody else had made. Cleared on every login, signup and logout.
+ */
+const ACCOUNT_LOCAL_PREFIXES = ['rs-welcome', 'rs-onboarding', 'rs:paywall'];
+export function clearAccountLocalState(): void {
+  try {
+    const doomed: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && ACCOUNT_LOCAL_PREFIXES.some((p) => k.startsWith(p))) doomed.push(k);
+    }
+    for (const k of doomed) localStorage.removeItem(k);
+  } catch { /* private mode: nothing was stored either */ }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['auth'], queryFn: () => api.get<MeResponse>('/api/auth/me'), staleTime: 60_000 });
@@ -25,15 +46,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (u: string, p: string) => {
     // Single-tenant server reads username/passcode; the hosted server accepts username|email + passcode|password. Send both spellings.
     await api.post('/api/auth/login', { username: u, passcode: p, email: u, password: p });
+    clearAccountLocalState(); // a different account may have left its wizard state in this browser
     await qc.invalidateQueries({ queryKey: ['auth'] });
   }, [qc]);
   const signup = useCallback(async (email: string, password: string, name?: string) => {
     await api.post('/api/auth/signup', { email, password, ...(name ? { name } : {}) });
+    clearAccountLocalState(); // a brand new account must see the wizard from screen 1, whoever used this browser before
     await qc.invalidateQueries({ queryKey: ['auth'] });
   }, [qc]);
   const logout = useCallback(async () => {
     try { await api.post('/api/auth/logout'); } finally {
       try { sessionStorage.clear(); } catch {}
+      clearAccountLocalState();
       qc.clear();
       window.location.assign('/'); // hard reload: guarantees no cached data survives the session
     }

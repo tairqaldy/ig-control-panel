@@ -26,6 +26,7 @@ export const PLAN_LIMITS: Record<PlanId, Limits> = {
 };
 export const DEFAULT_CATALOG: CreditsCatalog = {
   trialDays: 3,
+  trialRequiresCard: false,
   plans: [
     { id: 'trial', name: 'Trial', blurb: 'Try the whole thing on your newest 100 saves.', monthly: 0, yearly: 0, priceIds: { month: null, year: null }, limits: PLAN_LIMITS.trial },
     { id: 'pro', name: 'Pro', blurb: 'For one person with a real library.', monthly: 19, yearly: 144, priceIds: { month: null, year: null }, limits: PLAN_LIMITS.pro },
@@ -57,8 +58,34 @@ export function normalizeCatalog(raw: unknown): CreditsCatalog {
     const py = p.priceIds?.year ?? p.priceIds?.yearly ?? p.paddle?.year ?? p.paddle?.yearly ?? p.priceIdYear ?? null;
     plans.push({ id: d.id, name: p.name || d.name, blurb: p.blurb || p.description || d.blurb || p.tagline, monthly: monthly ?? d.monthly, yearly: yearly ?? d.yearly, priceIds: { month: pm ? String(pm) : null, year: py ? String(py) : null }, limits: { ...d.limits, ...(p.limits || {}) } });
   }
-  return { trialDays: Number(src.trialDays ?? src.trial_days ?? DEFAULT_CATALOG.trialDays) || DEFAULT_CATALOG.trialDays, plans, creditPacks: normalizeCreditPacks(src) };
+  return {
+    trialDays: Number(src.trialDays ?? src.trial_days ?? DEFAULT_CATALOG.trialDays) || DEFAULT_CATALOG.trialDays,
+    // Only an explicit `true` from the server flips the copy. A missing field means an older server or a self-hoster,
+    // where no card is taken and "no card" is the truth.
+    trialRequiresCard: src.trialRequiresCard === true || src.trial_requires_card === true,
+    plans,
+    creditPacks: normalizeCreditPacks(src),
+  };
 }
+
+/* ---------------- what the trial actually costs to start (ROUND7 §1) ----------------
+   Every public surface used to print "no card" as a constant. With the signup paywall on, that is the first thing a
+   visitor reads and the first thing the product breaks: they click Start free trial and meet "Card required." These
+   three helpers are the single place that sentence is decided, from the server's own `trialRequiresCard`. */
+
+/** Short chip: "no card" · "card required". */
+export const trialCardChip = (c: Pick<PlansCatalog, 'trialRequiresCard'>): string =>
+  (c.trialRequiresCard ? 'card required' : 'no card');
+
+/** One clause for a run-on line: "no card needed" · "a card is required, nothing charged for 3 days". */
+export const trialCardClause = (c: Pick<PlansCatalog, 'trialRequiresCard' | 'trialDays'>): string =>
+  (c.trialRequiresCard ? `a card is required, nothing is charged for ${c.trialDays} days` : 'no card needed');
+
+/** A whole sentence for body copy, ending in a full stop. */
+export const trialCardSentence = (c: Pick<PlansCatalog, 'trialRequiresCard' | 'trialDays'>): string =>
+  (c.trialRequiresCard
+    ? `A card is required to start; nothing is charged for ${c.trialDays} days and you can cancel in one click from Billing.`
+    : 'No card is needed to start, and nothing is charged when the trial ends.');
 
 /** Bullet list for a pricing card, from limits. */
 export function planFeatures(l: Limits): string[] {

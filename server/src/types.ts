@@ -161,6 +161,9 @@ export interface TenantRow {
   updated_at: number;
   cancelled_at: number | null;
   deleted_at: number | null;
+  /** migration 009: 1 = locked until a card is on file. Tenants that existed before the paywall are 0 forever. */
+  requires_payment?: number;
+  paywall_cleared_at?: number | null;
 }
 
 export interface UserRow {

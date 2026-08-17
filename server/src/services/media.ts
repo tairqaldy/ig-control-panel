@@ -164,3 +164,48 @@ export async function removeItemMedia(itemId: string) {
     await fsp.rm(target, { recursive: true, force: true });
   } catch {}
 }
+
+/**
+ * Delete a batch of item directories after the response has gone out (account deletion, big libraries), then report
+ * what could not be removed. `/privacy` and `/data-deletion` promise the cached thumbnails and video frames go too,
+ * so a failure has to be visible in the log and finishable later — see `sweepOrphanMedia`.
+ */
+export async function removeMediaInBackground(itemIds: string[], tid?: number): Promise<{ removed: number; failed: number }> {
+  let removed = 0;
+  let failed = 0;
+  for (const id of itemIds) {
+    try { await removeItemMedia(id); removed++; } catch { failed++; }
+  }
+  if (failed) console.error(`[media] ${failed} of ${itemIds.length} media folders could not be removed${tid ? ` for tenant ${tid}` : ''} — the boot sweep will retry`);
+  return { removed, failed };
+}
+
+/**
+ * Media folders whose item row no longer exists — the residue of a crash or a redeploy during a delete. Every folder
+ * under mediaDir is named `safeName(item.id)` and nothing else writes there, so anything that maps to no live item is
+ * an orphan. Runs once at boot and daily after that; deleting nothing is the normal outcome.
+ */
+export async function sweepOrphanMedia(liveItemIds: () => string[]): Promise<{ scanned: number; removed: number }> {
+  let entries: string[];
+  try { entries = await fsp.readdir(config.mediaDir); } catch { return { scanned: 0, removed: 0 }; }
+  if (!entries.length) return { scanned: 0, removed: 0 };
+  const live = new Set<string>();
+  for (const id of liveItemIds()) { const n = safeName(id); if (n) live.add(n); }
+  // An empty live set next to a full media directory means the query failed or the database is not open yet — not
+  // that every library on this server was deleted. Deleting on that reading would be a catastrophe, so we do nothing.
+  if (!live.size) { console.warn(`[media] sweep skipped: ${entries.length} media folders but no items in the database`); return { scanned: entries.length, removed: 0 }; }
+  let removed = 0;
+  for (const name of entries) {
+    if (live.has(name)) continue;
+    const target = path.resolve(config.mediaDir, name);
+    if (!target.startsWith(path.resolve(config.mediaDir) + path.sep)) continue;
+    try {
+      const st = await fsp.stat(target);
+      if (!st.isDirectory()) continue;
+      await fsp.rm(target, { recursive: true, force: true });
+      removed++;
+    } catch {}
+  }
+  if (removed) console.log(`[media] swept ${removed} orphaned media folder${removed === 1 ? '' : 's'}`);
+  return { scanned: entries.length, removed };
+}

@@ -2,6 +2,7 @@
  * Analysis scope & budget: which saves get (paid) analysis, how deep, and with what model tier.
  * All settings live in the `settings` table per tenant (editable in the UI); env vars are only used for models.
  */
+import { config } from '../config.js';
 import { db, getMeta, getSetting, GLOBAL, now, setMeta, setSetting } from '../db.js';
 import { estimateItemCost } from './pricing.js';
 import { models } from './openai.js';
@@ -20,7 +21,7 @@ export interface Scope {
   budgetUsd: number; // 0 = no cap
 }
 
-export const DEFAULT_SCOPE: Scope = { years: 2, types: ['video', 'image', 'carousel'], transcribe: 'short', transcribeMaxSeconds: 180, frames: 4, tier: 'standard', budgetUsd: 0 };
+export const DEFAULT_SCOPE: Scope = { years: 2, types: ['video', 'image', 'carousel'], transcribe: 'short', transcribeMaxSeconds: 180, frames: 4, tier: 'economy', budgetUsd: 0 };
 
 export function getScope(tid: number): Scope {
   const raw = getSetting(tid, 'scope');
@@ -46,7 +47,9 @@ export function setScope(tid: number, patch: Partial<Scope>): Scope {
 export function analysisModelFor(tid: number, scope: Scope): string {
   const explicit = getSetting(tid, 'analysis_model') || process.env.OPENAI_MODEL;
   if (explicit) return explicit;
-  return scope.tier === 'economy' ? 'gpt-5.4-nano' : 'gpt-5.4-mini';
+  // Both tiers analyse with nano now — it is ~5x cheaper and the structured schema does the heavy lifting, so the
+  // quality gap on this task is small while the bill is not. 'standard' still buys deeper transcription and more frames.
+  return scope.tier === 'economy' ? 'gpt-5.4-nano' : config.analysisModel;
 }
 
 /**

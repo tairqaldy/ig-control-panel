@@ -6,6 +6,7 @@ import {
 import { db, now, OWNER_TENANT, ownerEmail } from '../db.js';
 import { hasOpenAI } from '../services/openai.js';
 import { getTenant, planPayload } from '../services/plans.js';
+import { missingPaywallConfig, requiresPaymentAtSignup } from '../services/paywall.js';
 import type { TenantRow, UserRow } from '../types.js';
 
 export const auth = new Hono();
@@ -16,6 +17,16 @@ function setupIssues(): string[] {
   const issues: string[] = [];
   if (!ownerLoginEnabled()) issues.push('APP_USERNAME / APP_PASSCODE are not set — login is disabled until you set them.');
   if (!hasOpenAI(OWNER_TENANT)) issues.push('OPENAI_API_KEY is not set — imports work, but analysis, transcription, search-by-meaning and Ask are disabled.');
+  // /security says the key that encrypts Instagram tokens lives only in the deployment environment. On a hosted
+  // deploy without SESSION_SECRET it lives on the same volume as the database, which makes that sentence untrue.
+  if (config.hosted && !(process.env.SESSION_SECRET && process.env.SESSION_SECRET.length >= 16)) {
+    issues.push('SESSION_SECRET is not set — the key that encrypts Instagram tokens is stored on the data volume beside the database it protects. Set it in the deployment environment (it signs everyone out once, and stored Instagram tokens have to be reconnected).');
+  }
+  // The paywall turns itself off rather than trap people; without this line the operator would never learn it did.
+  if (config.trialRequiresCard) {
+    const missing = missingPaywallConfig();
+    if (missing.length) issues.push(`TRIAL_REQUIRES_CARD is on but ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} not set — new signups start without a card until that is fixed.`);
+  }
   return issues;
 }
 
@@ -100,14 +111,16 @@ auth.post('/signup', async (c) => {
   const trialEnds = t + config.trialDays * 86400;
   let tenantId = 0, userId = 0;
   d.transaction(() => {
-    const info = d.prepare(`INSERT INTO tenants (name, plan, plan_status, trial_ends_at, plan_started_at, created_at, updated_at) VALUES (?, 'trial', 'active', ?, ?, ?, ?)`).run(name || email.split('@')[0], trialEnds, t, t, t);
+    // requires_payment: only signups made while the paywall is in force start locked — existing tenants stay at 0 (migration 009).
+    const info = d.prepare(`INSERT INTO tenants (name, plan, plan_status, trial_ends_at, plan_started_at, requires_payment, created_at, updated_at) VALUES (?, 'trial', 'active', ?, ?, ?, ?, ?)`).run(name || email.split('@')[0], trialEnds, t, requiresPaymentAtSignup(), t, t);
     tenantId = Number(info.lastInsertRowid);
     const u = d.prepare('INSERT INTO users (tenant_id, email, password_hash, is_owner, created_at, last_login_at) VALUES (?, ?, ?, 0, ?, ?)').run(tenantId, email, hashPassword(password), t, t);
     userId = Number(u.lastInsertRowid);
   })();
   setSessionCookie(c, createSessionToken(email, tenantId, userId));
   const tenant = getTenant(tenantId)!;
-  return c.json({ ok: true, tenant: { id: tenant.id, name: tenant.name, plan: tenant.plan, trialEndsAt: tenant.trial_ends_at }, tenantId, email });
+  // requiresPayment lets the signup form go straight to /start instead of bouncing off a 402 first.
+  return c.json({ ok: true, tenant: { id: tenant.id, name: tenant.name, plan: tenant.plan, trialEndsAt: tenant.trial_ends_at }, tenantId, email, requiresPayment: Number(tenant.requires_payment ?? 0) === 1 });
 });
 
 auth.post('/logout', (c) => {

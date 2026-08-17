@@ -10,6 +10,22 @@ function maybeQuota(status: number, data: unknown) {
   }
 }
 
+/**
+ * HTTP 402 + `{ code: 'payment_required' }` (ROUND7 §1) → the tenant has no card on file and every route
+ * but auth/plan/billing is closed, so send them to /start once instead of toasting on every request.
+ * A full navigation, not a router push: nothing else on the page can work while the lock is on, and a
+ * fresh load leaves no polling query behind to fire the next 402. The path stays hard-coded even though the
+ * body carries `start` — a redirect target taken from a response is an open redirect waiting to happen.
+ */
+let paywallRedirect = false;
+function maybePaywall(status: number, data: unknown) {
+  if (status !== 402 || !data || typeof data !== 'object' || (data as any).code !== 'payment_required') return;
+  window.dispatchEvent(new CustomEvent('rs:payment-required', { detail: data }));
+  if (paywallRedirect || /^\/start\/?$/.test(window.location.pathname)) return;
+  paywallRedirect = true;
+  window.location.assign('/start');
+}
+
 async function req<T>(method: string, path: string, body?: unknown, init: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { ...(init.headers as Record<string, string> | undefined) };
   let payload: BodyInit | undefined;
@@ -23,6 +39,7 @@ async function req<T>(method: string, path: string, body?: unknown, init: Reques
   const data = ct.includes('application/json') ? await res.json().catch(() => null) : await res.text();
   if (!res.ok) {
     maybeQuota(res.status, data);
+    maybePaywall(res.status, data);
     throw new ApiError(res.status, (data && (data as any).error) || (typeof data === 'string' && data) || `HTTP ${res.status}`, data);
   }
   return data as T;
@@ -52,6 +69,7 @@ export async function ssePost(path: string, body: unknown, handlers: { onEvent: 
     let msg = t; let parsed: unknown = null;
     try { parsed = JSON.parse(t); msg = (parsed as any).error || t; } catch {}
     maybeQuota(res.status, parsed);
+    maybePaywall(res.status, parsed);
     throw new ApiError(res.status, msg || `HTTP ${res.status}`, parsed);
   }
   const reader = res.body.getReader();

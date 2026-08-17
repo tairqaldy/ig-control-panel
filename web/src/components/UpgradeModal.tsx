@@ -71,10 +71,17 @@ export function useUpgradeCheckout() {
     }
   }, [plan, auth.tenantId, auth.email, theme, waitForPlanChange]);
 
-  const openPortal = useCallback(async () => {
+  /**
+   * The Paddle customer portal. `which: 'cancel'` opens Paddle's cancel screen for this subscription directly rather
+   * than the portal's overview — the product says "Billing → Cancel. One click, no e-mail", and the overview is
+   * three clicks and a hunt. `cancelUrl` is only present when Paddle returned a subscription-scoped link, so the
+   * caller falls back to the overview rather than doing nothing.
+   */
+  const openPortal = useCallback(async (which: 'manage' | 'cancel' = 'manage') => {
     try {
-      const r = await api.post<{ url: string }>('/api/billing/portal');
-      if (r?.url) window.open(r.url, '_blank', 'noopener');
+      const r = await api.post<{ url: string; cancelUrl?: string | null }>('/api/billing/portal');
+      const url = which === 'cancel' ? r?.cancelUrl || r?.url : r?.url;
+      if (url) window.open(url, '_blank', 'noopener');
       else toast.error('No portal link returned');
     } catch (e: any) { toast.error(e?.message || 'Could not open the billing portal'); }
   }, []);
@@ -250,7 +257,7 @@ export function UpgradeModal() {
         <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line pt-4 text-[12px] text-muted">
           <span>Cancel any time from Billing. Access continues until the end of the paid period.</span>
           <span className="ml-auto inline-flex items-center gap-2">
-            {plan?.canManage && <button onClick={openPortal} className="btn btn-sm">Manage subscription <ExternalLink size={12} /></button>}
+            {plan?.canManage && <button onClick={() => void openPortal('manage')} className="btn btn-sm">Manage subscription <ExternalLink size={12} /></button>}
             <button onClick={close} className="btn btn-ghost btn-sm">Not now</button>
           </span>
         </div>

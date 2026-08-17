@@ -9,6 +9,9 @@ import { migration005Companion } from './005-companion.js';
 import { migration006 } from './006-ask-onboarding.js';
 import { migration007Automations } from './007-automations.js';
 import { migration008Credits } from './008-credits.js';
+import { migration009Paywall } from './009-paywall.js';
+import { migration010ProfileScore } from './010-profile-score.js';
+import { migration011IgWaitlist } from './011-ig-waitlist.js';
 
 export interface ExtraMigration { id: number; sql: string; after?: (d: Database.Database) => void }
 
@@ -18,4 +21,7 @@ export const EXTRA_MIGRATIONS: ExtraMigration[] = [
   migration006, // 6: ask conversations + onboarding state (server-ask agent) → ./006-ask-onboarding.ts
   migration007Automations, // 7: rule post filter + once-per-person + last send error (server-automations agent) → ./007-automations.ts
   migration008Credits, // 8: tenants.credits + credit_ledger (server-credits agent) → ./008-credits.ts
+  migration009Paywall, // 9: tenants.requires_payment + paywall_cleared_at, existing tenants grandfathered (server-paywall agent) → ./009-paywall.ts
+  migration010ProfileScore, // 10: profile_goals + profile_scores (server-profile-score agent) → ./010-profile-score.ts
+  migration011IgWaitlist, // 11: ig_waitlist — tell me when Instagram connections open (server-instagram-availability agent) → ./011-ig-waitlist.ts
 ];

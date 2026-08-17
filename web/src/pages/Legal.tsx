@@ -11,13 +11,21 @@ import terms from '../../../docs/legal/TERMS.md?raw';
 import refunds from '../../../docs/legal/REFUNDS.md?raw';
 import extensionPrivacy from '../../../docs/legal/EXTENSION-PRIVACY.md?raw';
 import security from '../../../docs/legal/SECURITY.md?raw';
+import creditsTerms from '../../../docs/legal/CREDITS-TERMS.md?raw';
+import dataDeletion from '../../../docs/legal/DATA-DELETION.md?raw';
+import subprocessors from '../../../docs/legal/SUBPROCESSORS.md?raw';
+import dpa from '../../../docs/legal/DPA.md?raw';
 
 const DOCS = {
   '/privacy': { label: 'Privacy', source: privacy },
   '/privacy/extension': { label: 'Extension privacy', source: extensionPrivacy },
+  '/data-deletion': { label: 'Data deletion', source: dataDeletion },
+  '/subprocessors': { label: 'Subprocessors', source: subprocessors },
   '/security': { label: 'Security', source: security },
   '/terms': { label: 'Terms', source: terms },
+  '/credits-terms': { label: 'Credits', source: creditsTerms },
   '/refunds': { label: 'Refunds', source: refunds },
+  '/dpa': { label: 'Data processing', source: dpa },
 } as const;
 type LegalPath = keyof typeof DOCS;
 /* Longest path first so /privacy/extension is not swallowed by /privacy. */

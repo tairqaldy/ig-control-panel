@@ -7,6 +7,7 @@ import { config } from '../config.js';
 import { db, now } from '../db.js';
 import type { PlanId, TenantRow } from '../types.js';
 import { CREDIT_EXPLAINER, CREDIT_RATES, creditBalance, creditPacks, creditUnitsAvailable, creditsForUnits, creditsPayload, isCreditMetric, spendCredits, type CreditMetric } from './credits.js';
+import { paywallEnabled, paywallState, trialPriceIds } from './paywall.js';
 
 export type { PlanId };
 
@@ -290,7 +291,8 @@ function jsonLimits(l: Limits): Record<keyof Limits, number | null> {
 /* ---------------- payloads ---------------- */
 
 export function paddlePublic() {
-  return { env: config.paddle.env, clientToken: config.paddle.clientToken || null, prices: { ...config.paddle.prices } };
+  // `trialPrices` are the same prices with Paddle's free period on them — signup checkout uses those, an upgrade uses `prices`.
+  return { env: config.paddle.env, clientToken: config.paddle.clientToken || null, prices: { ...config.paddle.prices }, trialPrices: trialPriceIds() };
 }
 
 /** `GET /api/plan` */
@@ -324,6 +326,7 @@ export function planPayload(tid: number) {
     },
     resets: { month: nextMonthStart(), day: nextDayStart() },
     credits: creditsPayload(tid, 20),
+    paywall: paywallState(tid), // the web polls this after checkout until the Paddle webhook lands
     paddle: { ...paddlePublic(), customData: { tenant_id: tid } },
     canManage: !!(t?.paddle_customer_id && config.paddle.apiKey),
     hosted: config.hosted,
@@ -340,6 +343,13 @@ export function planCatalog() {
     trialDays: config.trialDays,
     hosted: config.hosted,
     signupsEnabled: config.signupsEnabled,
+    /**
+     * Is a card taken before the free days start on this server (ROUND7 §1)? The landing, pricing, signup and login
+     * pages all used to say "no card" unconditionally, which stopped being true the moment the paywall came on — the
+     * exact class of promise this round exists to remove. It is the live `paywallEnabled()` answer, not the raw flag,
+     * so a deploy whose Paddle env is incomplete advertises the truth (no card) rather than the intent.
+     */
+    trialRequiresCard: paywallEnabled(),
     paddle: { env: config.paddle.env, clientToken: config.paddle.clientToken || null },
     plans: [
       { id: 'trial', name: 'Trial', tagline: `${config.trialDays} days free`, priceMonth: 0, priceYear: 0, priceYearPerMonth: 0, yearSavePercent: 0, priceIds: { month: null, year: null }, limits: jsonLimits(PLANS.trial) },
@@ -357,5 +367,9 @@ export function planForPriceId(priceId: string | null | undefined): 'pro' | 'stu
   const p = config.paddle.prices;
   if (priceId === p.proMonth || priceId === p.proYear) return 'pro';
   if (priceId === p.studioMonth || priceId === p.studioYear) return 'studio';
+  // Signup checkout buys the trial-enabled twin of the same plan; without this a card-first signup would stay on 'trial'.
+  const tp = trialPriceIds();
+  if (priceId === tp.proMonth || priceId === tp.proYear) return 'pro';
+  if (priceId === tp.studioMonth || priceId === tp.studioYear) return 'studio';
   return null;
 }

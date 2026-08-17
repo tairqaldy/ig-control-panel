@@ -26,9 +26,9 @@ const COOLDOWNS = [
 ];
 const simulateKind = (f: TriggerFamily) => (f === 'comment' ? 'comment' : f === 'story_reply' ? 'story_reply' : 'dm') as 'comment' | 'dm' | 'story_reply';
 
-function Step({ n, title, hint, children }: { n: number; title: string; hint?: string; children: React.ReactNode }) {
+function Step({ n, title, hint, children, sectionRef }: { n: number; title: string; hint?: string; children: React.ReactNode; sectionRef?: React.Ref<HTMLElement> }) {
   return (
-    <section className="border-t border-line pt-5 first:border-0 first:pt-0">
+    <section ref={sectionRef} className="border-t border-line pt-5 first:border-0 first:pt-0">
       <div className="flex items-baseline gap-2.5">
         <span className="h-5 w-5 shrink-0 grid place-items-center rounded-full border border-line bg-surface-2 font-mono text-[10.5px] text-muted">{n}</span>
         <h4 className="display text-[19px]">{title}</h4>
@@ -46,9 +46,13 @@ export interface RuleBuilderProps {
   accountUsername?: string | null;
   /** prefills the "send a real test" recipient with the last person who messaged you */
   latestSenderId?: string | null;
+  /** round 7 §5: a template opens the builder on "Then", where the only thing left to write is the message */
+  focusStep?: 'then';
+  /** round 7 §5: why a real send cannot happen (not connected, Meta review). Simulating still works. */
+  sendBlockedReason?: string | null;
 }
 
-export function RuleBuilder({ draft, rules, onClose, accountUsername, latestSenderId }: RuleBuilderProps) {
+export function RuleBuilder({ draft, rules, onClose, accountUsername, latestSenderId, focusStep, sendBlockedReason }: RuleBuilderProps) {
   const qc = useQueryClient();
   const [d, setD] = useState<RuleDraft>(draft);
   const [saved, setSaved] = useState<RuleDraft>(draft);
@@ -59,6 +63,8 @@ export function RuleBuilder({ draft, rules, onClose, accountUsername, latestSend
   const [recipient, setRecipient] = useState(latestSenderId || '');
   const [sendResult, setSendResult] = useState<TestSendResponse | null>(null);
   const testTouched = useRef(false);
+  const thenRef = useRef<HTMLElement>(null);
+  const replyRef = useRef<HTMLTextAreaElement>(null);
 
   const set = useCallback(<K extends keyof RuleDraft>(k: K, v: RuleDraft[K]) => setD((s) => ({ ...s, [k]: v })), []);
   const onKeywords = (text: string) => { setKwText(text); setD((s) => ({ ...s, keywords: text.split(',').map((x) => x.trim()).filter(Boolean) })); };
@@ -73,6 +79,17 @@ export function RuleBuilder({ draft, rules, onClose, accountUsername, latestSend
 
   const firstKeyword = d.keywords[0] || '';
   useEffect(() => { if (!testTouched.current) setTestText(firstKeyword); }, [firstKeyword]);
+
+  /* Opened from a template: everything above is already decided, so land on the message. */
+  useEffect(() => {
+    if (focusStep !== 'then') return;
+    const id = requestAnimationFrame(() => {
+      thenRef.current?.scrollIntoView({ block: 'start' });
+      replyRef.current?.focus();
+      replyRef.current?.setSelectionRange(replyRef.current.value.length, replyRef.current.value.length);
+    });
+    return () => cancelAnimationFrame(id);
+  }, [focusStep]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); requestClose(); } };
@@ -197,7 +214,7 @@ export function RuleBuilder({ draft, rules, onClose, accountUsername, latestSend
               )}
 
               {/* 3 — Then */}
-              <Step n={isComment ? 3 : 2} title="Then" hint={isComment ? 'The public comment reply is optional; the DM is the part that carries your link.' : 'This goes out as a direct message from your account.'}>
+              <Step n={isComment ? 3 : 2} title="Then" hint={isComment ? 'The public comment reply is optional; the DM is the part that carries your link.' : 'This goes out as a direct message from your account.'} sectionRef={thenRef}>
                 {isComment && (
                   <Field label="Public comment reply (optional)" hint="Posted under their comment so other people can see you answered.">
                     <input value={d.publicReplyText} onChange={(e) => set('publicReplyText', e.target.value)} className="input" placeholder="Sent you a DM" />
@@ -205,7 +222,7 @@ export function RuleBuilder({ draft, rules, onClose, accountUsername, latestSend
                 )}
                 <div className={cn(isComment && 'mt-3')}>
                   <Field label="Direct message" hint={<>Use <code className="font-mono">{'{{username}}'}</code> for their handle{isComment ? ' — a comment can be answered with one private DM, within 7 days' : ''}.</>}>
-                    <textarea value={d.replyText} onChange={(e) => set('replyText', e.target.value)} rows={4} className="input leading-relaxed" placeholder="Hey {{username}} — here's the link you asked for:" />
+                    <textarea ref={replyRef} value={d.replyText} onChange={(e) => set('replyText', e.target.value)} rows={4} className="input leading-relaxed" placeholder="Hey {{username}} — here's the link you asked for:" />
                   </Field>
                 </div>
                 <div className="mt-3">
@@ -296,7 +313,10 @@ export function RuleBuilder({ draft, rules, onClose, accountUsername, latestSend
 
                 <div className="mt-3 border-t border-line pt-3">
                   <span className="text-[11.5px] font-medium text-ink-2">Send a real test</span>
-                  {d.id ? (
+                  {/* Everything above works without Instagram; only a real send needs a live connection. */}
+                  {sendBlockedReason ? (
+                    <p className="mt-1 text-[11.5px] text-muted leading-relaxed">{sendBlockedReason}</p>
+                  ) : d.id ? (
                     <>
                       <input value={recipient} onChange={(e) => setRecipient(e.target.value)} className="input mt-1 font-mono text-[12px]" placeholder="IG-scoped sender id" />
                       <button onClick={() => testSend.mutate()} disabled={!recipient.trim() || testSend.isPending} className="btn btn-sm mt-2 w-full">

@@ -21,9 +21,18 @@ export function useIgAccount() {
   return useQuery({ queryKey: IG_ACCOUNT_KEY, queryFn: fetchIgAccount, staleTime: 30_000, retry: 1 });
 }
 
-/** Sends the browser to Meta's OAuth screen (the server 302s to instagram.com). */
-export function startInstagramConnect() {
-  window.location.assign('/api/instagram/connect');
+/**
+ * Sends the browser to Meta's OAuth screen (the server 302s to instagram.com).
+ *
+ * `returnTo` is the in-app path to come back to — signed into the OAuth state by the server, so a refusal by Meta
+ * lands on the screen that started the connect instead of dumping the person on /automations. The wizard's screen 4
+ * promised "straight back here" while doing exactly that; it now passes `/welcome?step=4`. Anything that is not a
+ * same-site path is ignored server-side.
+ */
+export function startInstagramConnect(returnTo?: unknown) {
+  // Typed `unknown` on purpose: several call sites pass this straight to onClick, where the argument is a MouseEvent.
+  const to = typeof returnTo === 'string' && returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '';
+  window.location.assign(`/api/instagram/connect${to ? `?next=${encodeURIComponent(to)}` : ''}`);
 }
 
 export function useDisconnectInstagram() {

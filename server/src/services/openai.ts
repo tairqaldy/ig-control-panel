@@ -194,6 +194,11 @@ export function quotaBlocked(): boolean {
   return Date.now() < quotaBlockedUntil;
 }
 
+/** Test hook: forget the cooldown, so one assertion about an outage does not colour the next one. */
+export function _clearQuotaBlock(): void {
+  quotaBlockedUntil = 0;
+}
+
 export function embeddingToBuffer(v: Float32Array): Buffer {
   return Buffer.from(v.buffer, v.byteOffset, v.byteLength);
 }

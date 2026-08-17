@@ -54,7 +54,8 @@ export class IgError extends Error {
 /* ------------------------------------------------------------------ */
 /* Signed OAuth state                                                   */
 /* ------------------------------------------------------------------ */
-export interface OAuthState { tid: number; uid: number; nonce: string; exp: number }
+/** `next` is the in-app path the screen that started the connect wants the person returned to (signed, so it cannot be forged into an open redirect). */
+export interface OAuthState { tid: number; uid: number; nonce: string; exp: number; next?: string }
 
 function stateKey(): Buffer {
   return crypto.createHash('sha256').update(`${config.sessionSecret}:ig-state`).digest();
@@ -63,8 +64,9 @@ function hmac(payload: string): string {
   return crypto.createHmac('sha256', stateKey()).update(payload).digest('base64url');
 }
 
-export function signState(tid: number, uid: number, ttlMs = STATE_TTL_MS): string {
+export function signState(tid: number, uid: number, ttlMs = STATE_TTL_MS, next?: string | null): string {
   const st: OAuthState = { tid, uid, nonce: crypto.randomBytes(12).toString('base64url'), exp: Date.now() + ttlMs };
+  if (next) st.next = String(next).slice(0, 200);
   const payload = Buffer.from(JSON.stringify(st)).toString('base64url');
   return `${payload}.${hmac(payload)}`;
 }
@@ -81,18 +83,19 @@ export function verifyState(state: string | undefined | null): OAuthState | null
     const st = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as OAuthState;
     if (!Number.isInteger(st.tid) || st.tid < 1) return null;
     if (typeof st.exp !== 'number' || st.exp < Date.now()) return null;
-    return { tid: st.tid, uid: Number(st.uid || 0), nonce: String(st.nonce || ''), exp: st.exp };
+    const next = typeof st.next === 'string' && st.next.startsWith('/') && !st.next.startsWith('//') ? st.next.slice(0, 200) : undefined;
+    return { tid: st.tid, uid: Number(st.uid || 0), nonce: String(st.nonce || ''), exp: st.exp, next };
   } catch { return null; }
 }
 
 /** The Instagram authorization URL for a tenant. */
-export function connectUrl(base: string, tid: number, uid: number): string {
+export function connectUrl(base: string, tid: number, uid: number, next?: string | null): string {
   const u = new URL('https://www.instagram.com/oauth/authorize');
   u.searchParams.set('client_id', config.metaAppId);
   u.searchParams.set('redirect_uri', redirectUri(base));
   u.searchParams.set('response_type', 'code');
   u.searchParams.set('scope', IG_SCOPES.join(','));
-  u.searchParams.set('state', signState(tid, uid));
+  u.searchParams.set('state', signState(tid, uid, undefined, next));
   u.searchParams.set('force_reauth', 'false');
   return u.toString();
 }

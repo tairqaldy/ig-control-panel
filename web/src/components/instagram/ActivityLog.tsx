@@ -7,14 +7,14 @@ import { Empty, Skeleton } from '../ui';
 import { cn, fmtAgo } from '../../lib/utils';
 import { useAutomationEvents } from './useAutomations';
 
-interface Row { key: string; ts: number; inbound: AutomationEvent | null; outs: AutomationEvent[]; system: AutomationEvent | null }
+export interface Row { key: string; ts: number; inbound: AutomationEvent | null; outs: AutomationEvent[]; system: AutomationEvent | null }
 
 /**
  * Pair each inbound event with the outbound events that followed it for the same sender within 3 minutes.
  * Events arrive newest-first, so a reply sits at a *lower* index than the message that triggered it. Claiming
  * happens in that same order, which gives every reply to the closest inbound that precedes it in time.
  */
-function buildRows(events: AutomationEvent[]): Row[] {
+export function buildRows(events: AutomationEvent[]): Row[] {
   const claimedBy = new Map<number, number>();          // outbound id → inbound id
   const outsFor = new Map<number, AutomationEvent[]>(); // inbound id → its replies, oldest first
   for (let i = 0; i < events.length; i++) {
@@ -41,7 +41,7 @@ function buildRows(events: AutomationEvent[]): Row[] {
   return rows;
 }
 
-const rowStatus = (r: Row): LogFilter => {
+export const rowStatus = (r: Row): LogFilter => {
   // A system row can also be a webhook that arrived and matched nothing (status 'no_match') — that is not a reply.
   if (r.system) return r.system.status === 'error' ? 'error' : r.system.status === 'no_match' ? 'no_match' : 'sent';
   if (r.inbound?.status === 'error' || r.outs.some((o) => o.status === 'error' || o.error)) return 'error';

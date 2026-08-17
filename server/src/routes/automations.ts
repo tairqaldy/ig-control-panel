@@ -136,6 +136,13 @@ webhooks.post('/instagram', async (c) => {
   // Route to the tenant whose Instagram account this payload is for (owner tenant when nothing matches), verifying with THAT tenant's app secret.
   const candidates = tenantsForWebhook(body);
   const sig = c.req.header('x-hub-signature-256');
+  // Hosted, and the payload belongs to no account we hold: almost always a disconnected customer whose subscription
+  // Meta still honours. Storing it anywhere would put a third party's Instagram id and message text into somebody
+  // else's workspace, so it is acknowledged and dropped — nothing is written, nothing is logged but the counter.
+  if (!candidates.length) {
+    console.warn('[webhook] instagram event for an account this server does not hold — ignored');
+    return c.text('EVENT_RECEIVED', 200);
+  }
   const t = candidates.find((cand) => verifySignature(cand, raw, sig));
   if (t === undefined) {
     const first = candidates[0];

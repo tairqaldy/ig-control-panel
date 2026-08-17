@@ -54,8 +54,11 @@ export default function Billing() {
   const doDelete = async () => {
     setDeleting(true);
     try {
-      await api.del('/api/account');
-      toast.success('Account deleted. Goodbye — and thanks for trying Resurfly.');
+      // The server cancels the Paddle subscription before deleting, and says here when it could not — the one case
+      // where "and any active subscription canceled" would otherwise be a promise nobody is left to check on.
+      const r = await api.del<{ subscription?: string; note?: string }>('/api/account');
+      if (r?.subscription === 'cancel_failed') toast.error(r.note || 'The account is gone, but your subscription could not be cancelled — write to hello@resurfly.com.', { duration: 15_000 });
+      else toast.success('Account deleted. Goodbye — and thanks for trying Resurfly.');
       await auth.logout();
     } catch (e: any) { toast.error(e?.message || 'Could not delete the account'); setDeleting(false); }
   };
@@ -83,7 +86,10 @@ export default function Billing() {
                 {auth.email && <div className="text-[12px] text-muted mt-1">Account: {auth.email}{auth.tenantId ? ` · workspace #${auth.tenantId}` : ''}</div>}
               </div>
               <div className="flex flex-row sm:flex-col flex-wrap gap-2 sm:min-w-[200px]">
-                {plan.canManage && <button onClick={openPortal} className="btn btn-sm"><Receipt size={13} /> Invoices and subscription <ExternalLink size={12} /></button>}
+                {plan.canManage && <button onClick={() => void openPortal('manage')} className="btn btn-sm"><Receipt size={13} /> Invoices and subscription <ExternalLink size={12} /></button>}
+                {/* The promise made on /start and in /terms is "Billing → Cancel. One click, no e-mail" — so the
+                    button goes to Paddle's cancel screen for this subscription, not to the portal's front page. */}
+                {plan.canManage && isPaid && <button onClick={() => void openPortal('cancel')} className="btn btn-ghost btn-sm text-muted hover:text-danger">Cancel subscription <ExternalLink size={12} /></button>}
                 <button onClick={() => { void refreshPlan(); }} className="btn btn-ghost btn-sm text-muted" title="Re-check the plan status with Paddle"><RefreshCw size={12} /> Refresh status</button>
               </div>
             </div>
@@ -168,7 +174,7 @@ export default function Billing() {
             {plan.plan !== 'owner' && (
               <div className="card-flat p-5 border-danger/30">
                 <div className="flex items-center gap-2 mb-1"><Trash2 size={15} className="text-danger" /><h3 className="text-[14px] font-semibold">Delete account</h3></div>
-                <p className="text-[12.5px] text-muted leading-relaxed">Removes your saves, media, analyses and settings from our servers and cancels any subscription. This cannot be undone, so export first.</p>
+                <p className="text-[12.5px] text-muted leading-relaxed">Removes your saves, media, analyses and settings from our servers, and cancels your subscription at Paddle so nothing further is charged. This cannot be undone, so export first.</p>
                 <button onClick={() => { setConfirmText(''); setConfirmDelete(true); }} className="btn btn-danger btn-sm mt-3"><Trash2 size={13} /> Delete my account</button>
               </div>
             )}
@@ -186,7 +192,7 @@ export default function Billing() {
         <div className="p-6">
           <div className="eyebrow mb-1">Danger zone</div>
           <h3 className="display text-[24px] mb-2">Delete this account?</h3>
-          <p className="text-[13px] text-ink-2 leading-relaxed">All saves, media, analyses, automation rules and settings will be removed and any active subscription canceled. Type <code className="font-mono">DELETE</code> to confirm.</p>
+          <p className="text-[13px] text-ink-2 leading-relaxed">All saves, media, analyses, automation rules and settings will be removed, and any active subscription is cancelled at Paddle before the account goes — if that call fails we say so here rather than leaving it billing. Type <code className="font-mono">DELETE</code> to confirm.</p>
           <input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} className="input mt-4 font-mono" placeholder="DELETE" autoFocus />
           <div className="mt-4 flex justify-end gap-2">
             <button onClick={() => setConfirmDelete(false)} className="btn">Cancel</button>

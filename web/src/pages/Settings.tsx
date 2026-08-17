@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { Save, FlaskConical, Database, Cpu, KeyRound, RefreshCw, HardDrive, ExternalLink, ChevronDown, Download, Trash2, Laptop, Plug, ArrowRight } from 'lucide-react';
+import { Save, FlaskConical, Database, Cpu, KeyRound, RefreshCw, HardDrive, ExternalLink, ChevronDown, Download, Trash2, Laptop, Plug, ArrowRight, FileText } from 'lucide-react';
 import { api } from '../lib/api';
 import { PageHeader, Field, Modal } from '../components/ui';
 import { ConnectCard, InstagramGlyph } from '../components/instagram';
@@ -105,10 +105,21 @@ export default function Settings() {
         {hostedTenant && (
           <div className="mt-5 rounded-xl border border-danger/30 p-4">
             <div className="flex items-center gap-2 mb-1"><Trash2 size={14} className="text-danger" /><h3 className="text-[13.5px] font-semibold">Delete account</h3></div>
-            <p className="text-[12.5px] text-muted leading-relaxed">Removes your saves, media, analyses, rules and settings from our servers and cancels any subscription. This cannot be undone, so export first.</p>
+            <p className="text-[12.5px] text-muted leading-relaxed">Disconnects Instagram, then removes your saves, media, analyses, conversations, rules, devices and settings from our servers. It does <strong>not</strong> cancel a subscription — cancel that in Billing first. This cannot be undone, so export first. <a href="/data-deletion" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-ink">What exactly is deleted</a></p>
             <button onClick={() => { setConfirmText(''); setConfirmDelete(true); }} className="btn btn-danger btn-sm mt-3"><Trash2 size={13} /> Delete my account</button>
           </div>
         )}
+      </section>
+
+      {/* Reviewers (Meta, Chrome Web Store) and users both look for these from inside the product, not only in the footer. */}
+      <section id="legal" className="card p-6 mb-6 scroll-mt-20">
+        <div className="flex items-center gap-2 mb-1"><FileText size={16} className="text-accent" /><h2 className="text-[15px] font-semibold">Policies</h2></div>
+        <p className="text-[12.5px] text-muted mb-3 leading-relaxed">What we store, who processes it, how long we keep it, and how to remove it.</p>
+        <div className="flex flex-wrap gap-x-4 gap-y-2 text-[12.5px]">
+          {[['Privacy', '/privacy'], ['Data deletion', '/data-deletion'], ['Subprocessors', '/subprocessors'], ['Security', '/security'], ['Extension privacy', '/privacy/extension'], ['Terms', '/terms'], ['Credits', '/credits-terms'], ['Refunds', '/refunds'], ['Data processing (DPA)', '/dpa']].map(([label, href]) => (
+            <a key={href} href={href} target="_blank" rel="noreferrer" className="text-ink-2 hover:text-ink underline underline-offset-2">{label}</a>
+          ))}
+        </div>
       </section>
 
       {/* ---------------- Engine ---------------- */}
@@ -161,7 +172,7 @@ export default function Settings() {
         <div className="p-6">
           <div className="eyebrow mb-1">Danger zone</div>
           <h3 className="display text-[24px] mb-2">Delete this account?</h3>
-          <p className="text-[13px] text-ink-2 leading-relaxed">All saves, media, analyses, automation rules and settings will be removed and any active subscription canceled. Type <code className="font-mono">DELETE</code> to confirm.</p>
+          <p className="text-[13px] text-ink-2 leading-relaxed">All saves, media, analyses, conversations, automation rules, paired devices and settings will be removed, and the Instagram connection deleted. An active subscription is <strong>not</strong> cancelled by this — do that in Billing first. Type <code className="font-mono">DELETE</code> to confirm.</p>
           <input value={confirmText} onChange={(ev) => setConfirmText(ev.target.value)} className="input mt-4 font-mono" placeholder="DELETE" autoFocus />
           <div className="mt-4 flex justify-end gap-2">
             <button onClick={() => setConfirmDelete(false)} className="btn">Cancel</button>

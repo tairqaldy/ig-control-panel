@@ -7,6 +7,8 @@ import { Modal, Skeleton } from '../ui';
 import { AccountBadge } from './AccountBadge';
 import { InstagramGlyph } from './icons';
 import { startInstagramConnect, useDisconnectInstagram, useIgAccount } from './useIgAccount';
+import { useIgAvailability } from './useAutomations';
+import { IgAvailabilityNotice } from './IgAvailabilityNotice';
 
 /**
  * The Instagram connection card (ROUND5-SPEC §2 / §5). Three states:
@@ -14,10 +16,16 @@ import { startInstagramConnect, useDisconnectInstagram, useIgAccount } from './u
  *  - not connected: "Connect Instagram" + the 3 things that happen after
  *  - connected: avatar, @username, followers, "Webhooks live", Disconnect
  * `compact` = one-row variant for Settings / onboarding. `showSettingsLink` hides the "Settings → Integrations" pointer when we're already there.
+ *
+ * ROUND7 §3: the Connect button is gated on `GET /api/instagram/availability`, not on "this server has a Meta app id".
+ * With our Meta app in Development mode the button was live on Settings, Automations and Analytics and every click
+ * ended on Meta's "app not active" page, whose only exit is the browser Back button. The gate lives here rather than
+ * in each page so a surface added later cannot forget it.
  */
 export function ConnectCard({ compact = false, className, showSettingsLink = true }: { compact?: boolean; className?: string; showSettingsLink?: boolean }) {
   const auth = useAuth();
   const q = useIgAccount();
+  const availability = useIgAvailability();
   const disconnect = useDisconnectInstagram();
   const [confirm, setConfirm] = useState(false);
   const d = q.data;
@@ -85,6 +93,30 @@ export function ConnectCard({ compact = false, className, showSettingsLink = tru
           )}
         </div>
       </div>
+    );
+  }
+
+  /* ---------- configured, but connecting is not possible today ----------
+     The account query resolves from one row while availability may still be waiting on the Meta probe (up to 6 s on
+     a cold server), so an unresolved query renders the neutral state rather than an optimistic Connect button. */
+  const av = availability.data;
+  if (!av || availability.isLoading) {
+    return (
+      <div className={cn('card p-4 sm:p-5', className)}>
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 shrink-0 grid place-items-center rounded-xl bg-surface-2 text-muted"><InstagramGlyph size={18} /></div>
+          <div className="text-[13px] text-muted">Checking whether Instagram accounts can be connected right now…</div>
+        </div>
+      </div>
+    );
+  }
+  if (!av.unavailable && !av.canConnect) {
+    return (
+      <IgAvailabilityNotice
+        availability={av}
+        stillWorks="Your saves, the notes, search and Ask all work without it, and nothing you set up now has to be redone."
+        className={className}
+      />
     );
   }
 

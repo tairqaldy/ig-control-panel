@@ -18,6 +18,7 @@ import crypto from 'node:crypto';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'resurfly-automations-'));
 process.env.DATA_DIR = dir;
 process.env.HOSTED = 'true';
+process.env.SESSION_SECRET = 'test-session-secret-0123456789abcdef';   // hosted mode refuses to boot without one
 process.env.OPENAI_API_KEY = 'sk-test-not-used';
 process.env.META_APP_SECRET = '';
 process.env.META_VERIFY_TOKEN = '';
@@ -126,7 +127,11 @@ async function main() {
   console.log('\nrouting and signature');
   eq('the payload routes to this tenant', tenantsForWebhook(dmBody), [tid]);
   eq('the Test envelope routes too', tenantsForWebhook(testButtonBody), [tid]);
-  eq('an unknown account falls back to the owner tenant', tenantsForWebhook({ entry: [{ id: '17841499999999999' }] }), [1]);
+  // ROUND7 fix pass §7: hosted, an account nobody here holds. Meta keeps delivering DMs after a customer disconnects
+  // (the deauthorize callback deliberately leaves the subscription alive) and the owner's app secret signs every
+  // event of the app — so the old fallback wrote a stranger's Instagram id, handle and message text into the
+  // operator's activity log and ran the operator's rules against it. No candidate is the correct answer.
+  eq('hosted: an unknown account routes to nobody, not to the owner', tenantsForWebhook({ entry: [{ id: '17841499999999999' }] }), []);
 
   const raw = JSON.stringify(dmBody);
   const good = 'sha256=' + crypto.createHmac('sha256', APP_SECRET).update(raw).digest('hex');

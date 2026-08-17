@@ -9,6 +9,7 @@ import { db, getMeta, GLOBAL, j, now, setMeta } from '../db.js';
 import type { PlanStatus, TenantRow } from '../types.js';
 import { getTenant, planForPriceId, updateTenant } from './plans.js';
 import { addCredits, packForPriceId } from './credits.js';
+import { clearPaywall } from './paywall.js';
 
 export function paddleApiBase(): string {
   return config.paddle.env === 'production' ? 'https://api.paddle.com' : 'https://sandbox-api.paddle.com';
@@ -153,19 +154,25 @@ function creditItems(data: any): Array<{ priceId: string; credits: number; quant
 }
 
 /** Apply one (verified) Paddle event to the tenants table. Returns a short description for logging. */
-export async function handlePaddleEvent(evt: PaddleEvent): Promise<{ handled: boolean; note: string; tenantId?: number }> {
+export async function handlePaddleEvent(evt: PaddleEvent): Promise<{ handled: boolean; note: string; tenantId?: number; retry?: boolean }> {
   if (!evt?.event_id || !evt.event_type) return { handled: false, note: 'malformed event' };
   if (!HANDLED.has(evt.event_type)) return { handled: false, note: `ignored ${evt.event_type}` };
   if (seenEvent(evt.event_id)) return { handled: true, note: `duplicate ${evt.event_id}` };
   const data = evt.data || {};
   const tenant = await resolveTenant(data);
-  if (!tenant) { rememberEvent(evt.event_id); return { handled: false, note: `${evt.event_type}: no tenant for customer ${data.customer_id || '?'}` }; }
+  // No tenant for a live subscription is the one failure we must NOT absorb: the person has paid and is still behind
+  // the paywall. Deliberately neither remembered nor answered 2xx — Paddle then retries for three days, which is
+  // enough time for support to attach the customer id by hand and have the redelivery land instead of being
+  // discarded as a duplicate.
+  if (!tenant) return { handled: false, retry: true, note: `${evt.event_type}: no tenant for customer ${data.customer_id || '?'} — asking Paddle to retry` };
   if (tenant.plan === 'owner') { rememberEvent(evt.event_id); return { handled: false, note: 'owner tenant is not billable', tenantId: tenant.id }; }
 
   const patch: Partial<TenantRow> = {};
   const priceId = firstPriceId(data);
   const plan = planForPriceId(priceId);
   const t = now();
+  /** A card reached Paddle — lift the signup paywall (ROUND7 §1). Set below; applied after the patch lands. */
+  let cardOnFile = false;
 
   if (evt.event_type.startsWith('subscription.')) {
     if (typeof data.id === 'string') patch.paddle_subscription_id = data.id;
@@ -187,6 +194,12 @@ export async function handlePaddleEvent(evt: PaddleEvent): Promise<{ handled: bo
     const started = iso(data.started_at) || iso(data.first_billed_at);
     if (started && (!tenant.plan_started_at || evt.event_type === 'subscription.created' || evt.event_type === 'subscription.activated')) patch.plan_started_at = started;
     if (!patch.plan_started_at && !tenant.plan_started_at && plan) patch.plan_started_at = t;
+    // A live subscription means the card went through. While Paddle runs the free period the subscription is
+    // `trialing` and `next_billed_at` is the exact moment of the first charge — that is our trial end, not our guess.
+    if (data.status === 'trialing' || data.status === 'active') {
+      cardOnFile = true; // true even with a cancel scheduled: they paid, and a cleared paywall never comes back
+      if (data.status === 'trialing') { const firstCharge = iso(data.next_billed_at); if (firstCharge) patch.trial_ends_at = firstCharge; }
+    }
   } else if (evt.event_type === 'transaction.completed') {
     // Credit packs are one-time purchases: add the credits, keyed on the Paddle transaction id so a redelivered
     // webhook (a new event id for the same transaction) can never credit the account twice.
@@ -196,6 +209,7 @@ export async function handlePaddleEvent(evt: PaddleEvent): Promise<{ handled: bo
       const total = packs.reduce((n, p) => n + p.credits, 0);
       const r = addCredits(tenant.id, total, 'purchase', `paddle:${txnId}`);
       if (data.customer_id) updateTenant(tenant.id, { paddle_customer_id: data.customer_id });
+      clearPaywall(tenant.id, 'credit pack purchased'); // a card is on file; no plan is granted
       rememberEvent(evt.event_id);
       const note = r.duplicate ? `transaction.completed → tenant ${tenant.id}: ${total} credits already added for ${txnId}` : `transaction.completed → tenant ${tenant.id}: +${total} credits (balance ${r.balance}, ${txnId})`;
       console.log(`[paddle] ${note}`);
@@ -206,7 +220,7 @@ export async function handlePaddleEvent(evt: PaddleEvent): Promise<{ handled: bo
     if (data.subscription_id) patch.paddle_subscription_id = data.subscription_id;
     if (priceId) patch.paddle_price_id = priceId;
     if (plan) patch.plan = plan;
-    if (data.subscription_id || plan) patch.plan_status = 'active';
+    if (data.subscription_id || plan) { patch.plan_status = 'active'; cardOnFile = true; }
     if (plan && !tenant.plan_started_at) patch.plan_started_at = t;
     const periodEnd = iso(data?.billing_period?.ends_at) || iso(data?.items?.[0]?.proration?.billing_period?.ends_at);
     if (periodEnd) patch.plan_renews_at = periodEnd;
@@ -215,6 +229,7 @@ export async function handlePaddleEvent(evt: PaddleEvent): Promise<{ handled: bo
 
   // Never let a plan we can't map wipe a paid plan; unknown price ids keep the current plan.
   if (Object.keys(patch).length) updateTenant(tenant.id, patch);
+  if (cardOnFile) clearPaywall(tenant.id, `${evt.event_type}${data.status ? ` (${data.status})` : ''}`);
   rememberEvent(evt.event_id);
   return { handled: true, note: `${evt.event_type} → tenant ${tenant.id} ${JSON.stringify({ plan: patch.plan, status: patch.plan_status })}`, tenantId: tenant.id };
 }
@@ -233,6 +248,25 @@ export async function paddleApi(method: 'GET' | 'POST', path: string, body?: unk
   try { data = JSON.parse(text); } catch { data = { raw: text }; }
   if (!res.ok) throw new Error(`Paddle API ${method} ${path}: HTTP ${res.status} ${data?.error?.detail || data?.error?.code || text.slice(0, 200)}`);
   return data;
+}
+
+/**
+ * Cancel a subscription at Paddle. Used by account deletion: the Billing screen says deleting the account stops the
+ * billing, and there is no account left to log into afterwards, so the charge has to actually stop. Never throws —
+ * the caller reports what really happened instead of promising what it wishes had happened.
+ */
+export async function cancelSubscription(subscriptionId: string, when: 'immediately' | 'next_billing_period' = 'immediately'): Promise<{ ok: boolean; error: string | null }> {
+  if (!config.paddle.apiKey) return { ok: false, error: 'PADDLE_API_KEY not configured' };
+  try {
+    await paddleApi('POST', `/subscriptions/${encodeURIComponent(subscriptionId)}/cancel`, { effective_from: when });
+    return { ok: true, error: null };
+  } catch (e: any) {
+    const msg = String(e?.message || e);
+    // Already cancelled / already gone is the outcome we wanted, not a failure to report to the person.
+    if (/subscription_update_when_canceled|not_found|already canceled|already cancelled/i.test(msg)) return { ok: true, error: null };
+    console.error('[paddle] subscription cancel failed', msg);
+    return { ok: false, error: msg };
+  }
 }
 
 /** Customer portal session → URL the customer can open to manage/cancel the subscription and see invoices. */

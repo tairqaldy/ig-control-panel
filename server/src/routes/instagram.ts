@@ -10,11 +10,28 @@ import { config } from '../config.js';
 import { currentTenant, tid } from '../auth.js';
 import { finite } from '../services/plans.js';
 import {
-  accountPayload, connectUrl, disconnect, ensureStarterRules, handleCallback, IgError, instagramConfigured, parseSignedRequest, publicBase, STARTER_TEMPLATES, starterRules, tenantsForIgUser,
+  accountPayload, connectUrl, disconnect, ensureStarterRules, handleCallback, IgError, instagramConfigured, parseSignedRequest, publicBase, STARTER_TEMPLATES, starterRules, tenantsForIgUser, verifyState,
 } from '../services/instagram.js';
 import { analyticsPayload, FORCE_INTERVAL_S, isRefreshing, lastRefreshedAt, refreshAnalytics, refreshInBackground } from '../services/ig-analytics.js';
+import { igAvailability, invalidateIgAvailability } from '../services/ig-availability.js';
+import { now as nowSec, setMeta } from '../db.js';
 
 const NOT_CONFIGURED = { error: 'Instagram connect is not configured on this server (META_APP_ID/META_APP_SECRET).', code: 'not_configured' } as const;
+
+/**
+ * Where to send the browser after the OAuth round trip. Only a same-site path we produced ourselves — an absolute
+ * URL, a protocol-relative `//host` or anything with a backslash is refused, so `?next=` can never be an open
+ * redirect. The wizard uses it to come back to `/welcome?step=4`, which is what its own copy promises.
+ */
+function safeReturnPath(v: string | undefined | null): string | null {
+  if (!v || typeof v !== 'string') return null;
+  if (!v.startsWith('/') || v.startsWith('//') || v.includes('\\') || v.includes('://')) return null;
+  return v.slice(0, 200);
+}
+/** Append a query fragment to a path that may already carry one. */
+function withQuery(pathname: string, q: string): string {
+  return `${pathname}${pathname.includes('?') ? '&' : '?'}${q}`;
+}
 
 /* ------------------------------------------------------------------ */
 /* Public: OAuth callback + Meta callbacks                              */
@@ -23,9 +40,13 @@ export const instagramPublic = new Hono();
 
 instagramPublic.get('/callback', async (c) => {
   const base = publicBase(new URL(c.req.url).origin);
-  const to = (q: string) => c.redirect(`${base}/automations?${q}`, 302);
+  // The screen that started the connect said where it wanted the person back; the state carries it, signed, so a
+  // refusal by Meta returns them to the same screen instead of stranding them on a page they never asked for.
+  const dest = safeReturnPath(verifyState(c.req.query('state'))?.next) || '/automations';
+  const to = (q: string) => c.redirect(`${base}${withQuery(dest, q)}`, 302);
   try {
     const r = await handleCallback({ code: c.req.query('code'), state: c.req.query('state'), error: c.req.query('error'), errorReason: c.req.query('error_reason') }, base);
+    invalidateIgAvailability(r.tid); // the 10-minute availability cache must not keep saying "not connected"
     refreshInBackground(r.tid, { force: true }); // warm the analytics cache so /analytics is not empty on first open
     return to(`connected=1${r.webhookSubscribed ? '' : '&webhooks=0'}`);
   } catch (e: any) {
@@ -48,12 +69,19 @@ async function signedRequestFrom(c: Context): Promise<string | null> {
   return c.req.query('signed_request') || null;
 }
 
+/**
+ * Meta calls this when somebody removes Resurfly under Instagram → Apps and websites. `/privacy` and
+ * `/data-deletion` both state that removing the app there also clears the automation contacts and events and the
+ * cached media, insights and snapshots — so it wipes, exactly like the data-deletion callback. (The two callbacks
+ * are separate requests at Meta and removal only guarantees this one; leaving the wipe to the other one meant every
+ * sender id, handle and message body of a removed account stayed in the database indefinitely.)
+ */
 instagramPublic.post('/deauthorize', async (c) => {
   const sr = await signedRequestFrom(c);
   const payload = parseSignedRequest(sr);
   if (!payload) return c.json({ error: 'invalid signed_request' }, 400);
   const tenants = tenantsForIgUser(payload.user_id);
-  for (const t of tenants) await disconnect(t, { unsubscribe: false, reason: 'deauthorized from Instagram' });
+  for (const t of tenants) { await disconnect(t, { unsubscribe: false, wipe: true, reason: 'deauthorized from Instagram' }); invalidateIgAvailability(t); }
   return c.json({ ok: true, disconnected: tenants.length });
 });
 
@@ -62,11 +90,16 @@ instagramPublic.post('/delete', async (c) => {
   const payload = parseSignedRequest(sr);
   if (!payload) return c.json({ error: 'invalid signed_request' }, 400);
   const tenants = tenantsForIgUser(payload.user_id);
-  for (const t of tenants) await disconnect(t, { unsubscribe: false, wipe: true, reason: 'data deletion requested from Instagram' });
+  for (const t of tenants) { await disconnect(t, { unsubscribe: false, wipe: true, reason: 'data deletion requested from Instagram' }); invalidateIgAvailability(t); }
   const base = publicBase(new URL(c.req.url).origin);
   const confirmation = crypto.randomUUID();
+  // Meta's contract for `url` is a page where the person can follow up on the request, and the code is only useful if
+  // somebody can look it up — a console line is not a record. Kept against every tenant the request touched, and
+  // deleted with the account like everything else in `meta`.
+  const record = JSON.stringify({ code: confirmation, at: nowSec(), igUser: payload.user_id ?? null });
+  for (const t of tenants) { try { setMeta(t, 'ig_deletion_request', record); } catch {} }
   console.log(`[instagram] data deletion request for ig user ${payload.user_id ?? '?'} → tenant(s) ${tenants.join(',') || 'none'} (confirmation ${confirmation})`);
-  return c.json({ url: `${base}/privacy`, confirmation_code: confirmation });
+  return c.json({ url: `${base}/data-deletion`, confirmation_code: confirmation });
 });
 
 /* ------------------------------------------------------------------ */
@@ -74,11 +107,22 @@ instagramPublic.post('/delete', async (c) => {
 /* ------------------------------------------------------------------ */
 export const instagram = new Hono();
 
-instagram.get('/connect', (c) => {
+/**
+ * Start the OAuth round trip. The availability check (ROUND7 §3) is the last chokepoint before the person leaves our
+ * product for Meta: a stale tab, a bookmark or any button we failed to gate would otherwise land them on Meta's
+ * "app not active" page, whose only exit is the browser Back button. Refusing here sends them back to the screen
+ * they came from with the reason, which is what every other surface now shows.
+ */
+instagram.get('/connect', async (c) => {
   if (!instagramConfigured()) return c.json(NOT_CONFIGURED, 503);
   const s = currentTenant(c)!;
   const base = publicBase(new URL(c.req.url).origin);
-  return c.redirect(connectUrl(base, s.tid, s.uid), 302);
+  const next = safeReturnPath(c.req.query('next'));
+  const av = await igAvailability(s.tid).catch(() => null);
+  if (av && !av.canConnect) {
+    return c.redirect(`${base}${withQuery(next || '/automations', `error=${encodeURIComponent('unavailable')}`)}`, 302);
+  }
+  return c.redirect(connectUrl(base, s.tid, s.uid, next), 302);
 });
 
 instagram.get('/account', (c) => c.json(accountPayload(tid(c))));
@@ -86,6 +130,7 @@ instagram.get('/account', (c) => c.json(accountPayload(tid(c))));
 instagram.delete('/account', async (c) => {
   const t = tid(c);
   const r = await disconnect(t, { unsubscribe: true, reason: 'disconnected in Settings' });
+  invalidateIgAvailability(t); // otherwise the AI capability note keeps asserting a connection for ten minutes
   return c.json({ ok: true, existed: r.existed, ...accountPayload(t) });
 });
 

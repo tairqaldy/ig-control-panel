@@ -15,6 +15,7 @@ import path from 'node:path';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'resurfly-credits-'));
 process.env.DATA_DIR = dir;
 process.env.HOSTED = 'true';
+process.env.SESSION_SECRET = 'test-session-secret-0123456789abcdef';   // hosted mode refuses to boot without one
 process.env.OPENAI_API_KEY = 'sk-test-not-used';
 process.env.PADDLE_PRICE_CREDITS_500 = 'pri_test_500';
 process.env.PADDLE_PRICE_CREDITS_2000 = 'pri_test_2000';

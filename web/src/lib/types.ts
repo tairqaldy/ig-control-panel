@@ -196,7 +196,16 @@ export interface PlanInfo {
 export interface QuotaError { error: string; code: 'quota'; metric: string; window?: 'total' | 'month' | 'day' | 'minute' | null; used: number; limit: Limit; remaining?: Limit; resetsAt?: number | null; plan: PlanId; upgrade: true }
 /** GET /api/plans (public catalog). The web tolerates a few shapes — see components/Pricing.tsx normalizeCatalog(). */
 export interface PlanCatalogEntry { id: PlanId; name: string; blurb?: string; monthly: number | null; yearly: number | null; priceIds: { month: string | null; year: string | null }; limits: Limits }
-export interface PlansCatalog { trialDays: number; plans: PlanCatalogEntry[] }
+export interface PlansCatalog {
+  trialDays: number;
+  plans: PlanCatalogEntry[];
+  /**
+   * Is a card taken before the free days start on this server (ROUND7 §1)? Every public page used to say "no card"
+   * unconditionally, which the signup paywall made false. Defaults to false so a server that does not send the field
+   * — a self-hoster, an older build — keeps the old, true copy.
+   */
+  trialRequiresCard: boolean;
+}
 export interface QueueResponse extends WorkerStatus { justQueued: number; leftOut?: number; quota?: { used: number; limit: Limit; remaining: number; plan?: PlanId } }
 
 export interface Rule {

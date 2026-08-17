@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'motion/react';
-import { LayoutGrid, Library as LibraryIcon, MessageSquareText, Sparkles, Waypoints, Upload, Bot, Settings as SettingsIcon, Sun, Moon, LogOut, Search, Menu, X, Pause, Play, CreditCard, AlertTriangle, BarChart3, type LucideIcon } from 'lucide-react';
+import { LayoutGrid, Library as LibraryIcon, MessageSquareText, Sparkles, Waypoints, Upload, Bot, Settings as SettingsIcon, Sun, Moon, LogOut, Search, Menu, X, Pause, Play, CreditCard, AlertTriangle, BarChart3, Gauge, type LucideIcon } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth, usePalette, useQuota, useTheme } from '../lib/store';
 import { cn, isMac } from '../lib/utils';
@@ -28,6 +28,7 @@ const NAV: NavItem[] = [
   { to: '/graph', label: 'Graph', icon: Waypoints },
   { to: '/analytics', label: 'Analytics', icon: BarChart3, group: 'instagram' },
   { to: '/automations', label: 'Automations', icon: Bot, group: 'instagram' },
+  { to: '/profile-score', label: 'Profile score', icon: Gauge, group: 'instagram' },
   { to: '/import', label: 'Import', icon: Upload, group: 'setup' },
   { to: '/settings', label: 'Settings', icon: SettingsIcon, group: 'setup' },
 ];

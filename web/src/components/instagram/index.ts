@@ -10,3 +10,11 @@ export { PostPicker } from './PostPicker';
 export { DmPreview } from './DmPreview';
 export { ActivityLog } from './ActivityLog';
 export { useDiagnostics, useIgMedia, useRules, useAutomationEvents, simulate, DIAGNOSTICS_KEY, IG_MEDIA_KEY, EVENTS_KEY, RULES_KEY } from './useAutomations';
+/* Round 7 §5 — behaviours list, templates gallery, live feed, and the "can Instagram be connected at all" notice */
+export { RuleList } from './RuleList';
+export { TemplateGallery, TEMPLATES } from './Templates';
+export type { RuleTemplate } from './Templates';
+export { LiveActivity } from './LiveActivity';
+export { IgAvailabilityNotice } from './IgAvailabilityNotice';
+export { useIgAvailability, IG_AVAILABILITY_KEY } from './useAutomations';
+export type { IgAvailability } from './useAutomations';
