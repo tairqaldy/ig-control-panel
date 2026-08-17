@@ -118,27 +118,42 @@ async function main() {
   eq('nothing to wait for', av.waitlistOffered, false);
   check('the note invites a connection when it works', /has not connected their Instagram account yet/.test(av.note), av.note);
 
-  /* ---------------- Meta refuses our credentials ---------------- */
-  console.log('\nMeta refuses the app credentials');
+  /* ---------------- Meta refuses the probe ---------------- */
+  /*
+   * A refused probe used to force canConnect=false for everybody. That was wrong for the configuration we actually
+   * run: META_APP_ID is an Instagram (Instagram Login) app id, and graph.facebook.com/{id} only resolves a Facebook
+   * Application node, so Meta refuses the lookup on every correctly configured Instagram-Login deployment. On
+   * production it made the site tell the owner — who could demonstrably connect — "Meta is not accepting our app's
+   * credentials", and injected that into every Ask prompt. META_APP_LIVE is the authority on live-vs-development;
+   * the probe is a diagnostic.
+   */
+  console.log('\nMeta refuses the app probe');
   probeMode = 'rejected';
   _resetIgAvailability();
   av = await igAvailability(tid, { force: true });
-  eq('rejected credentials beat META_APP_LIVE', [av.mode, av.canConnect], ['development', false]);
-  // 'unconfigured' is what sends the UI to "set up your own Meta app"; nobody hosted can act on that, so they are
-  // offered the waitlist instead, and Meta's error text — useful only to whoever holds the credentials — stays out.
-  eq('a hosted stranger is offered the waitlist, not a Meta app setup', av.waitlistOffered, true);
-  check('the raw Meta error is not shown to them', !av.reason.includes('Invalid OAuth access token.'), av.reason);
-  check('the reason says it is ours to fix', /ours to fix/.test(av.reason), av.reason);
+  eq('a refused probe does not override META_APP_LIVE', [av.mode, av.canConnect], ['live', true]);
+  eq('nothing to wait for while the app is live', av.waitlistOffered, false);
+  check('the raw Meta error is not shown to a hosted stranger', !av.reason.includes('Invalid OAuth access token.'), av.reason);
   check('the secret is nowhere in the payload', !JSON.stringify(av).includes(process.env.META_APP_SECRET!), av.reason);
 
-  console.log('\nMeta refuses the app credentials, self-hosted');
+  console.log('\nMeta refuses the app probe, self-hosted (the operator can act on it)');
   (config as any).hosted = false;
   _resetIgAvailability();
   av = await igAvailability(tid, { force: true });
-  eq('the operator gets the setup path, and still cannot connect', [av.mode, av.canConnect], ['unconfigured', false]);
-  check('Meta\'s own words are surfaced to whoever can act on them', av.reason.includes('Invalid OAuth access token.'), av.reason);
+  eq('the self-hoster can still connect', [av.mode, av.canConnect], ['live', true]);
+  check("Meta's own words are surfaced to whoever can act on them", av.reason.includes('Invalid OAuth access token.'), av.reason);
+  check('and framed as a check, not a breakage', /does not block connecting/.test(av.reason), av.reason);
   eq('nothing to put them on a waitlist for', av.waitlistOffered, false);
   (config as any).hosted = true;
+
+  console.log('\nno Meta app at all is the only state that closes the door');
+  const savedAppId = config.metaAppId;
+  (config as any).metaAppId = '';
+  _resetIgAvailability();
+  av = await igAvailability(tid, { force: true });
+  eq('unconfigured: no mode, no connect', [av.mode, av.canConnect], ['unconfigured', false]);
+  eq('and no waitlist, because nobody is coming to fix it for them', av.waitlistOffered, false);
+  (config as any).metaAppId = savedAppId;
 
   /* ---------------- Meta unreachable: the verdict must not flip on a network blip ---------------- */
   console.log('\nMeta unreachable');
@@ -209,7 +224,7 @@ async function main() {
   probeMode = 'rejected';
   _resetIgAvailability();
   const refused = await igAvailability(tid, { force: true });
-  eq('a real refusal still closes it', refused.canConnect, false);
+  eq('a refusal is a diagnostic, not a door — the verdict is unchanged', [refused.mode, refused.canConnect], ['live', true]);
 
   /* ---------------- fix pass: connect / disconnect invalidate the tenant cache ---------------- */
   console.log('\nthe capability note follows a connection immediately');

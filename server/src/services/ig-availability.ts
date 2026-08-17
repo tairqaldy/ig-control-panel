@@ -219,13 +219,18 @@ function assemble(tid: number): IgAvailability {
   const wl = waitlistRow(tid);
   const live = envLive();
 
-  // Refused credentials mean nobody can connect, but which mode that reads as depends on who can fix it: the UI sends
-  // `unconfigured` people to "set up your own Meta app", which is right for a self-hoster and useless advice on a
-  // hosted deployment, where only we can fix our app — there they get the Development-mode notice and the waitlist.
-  const usable = configured && !rejected;
-  const mode: IgMode = !configured || (rejected && !config.hosted)
+  // A refused probe is NOT allowed to close the Connect path, and this is not caution — it is the configuration we
+  // actually run. `META_APP_ID` here is an *Instagram* app id (Instagram API with Instagram Login), and
+  // `graph.facebook.com/{id}` only resolves a Facebook **Application** node, so Meta refuses the lookup for every
+  // correctly configured Instagram-Login deployment. Reading that as "our credentials are rejected" set
+  // canConnect=false for everyone — including the owner, who demonstrably can connect — and put "Meta is not accepting
+  // our app's credentials" on the site and into every Ask prompt. The probe can confirm reachability and a name; it
+  // cannot judge our credentials, and it never could answer live-vs-development (see the header). `META_APP_LIVE` is
+  // the authority on that, so a refusal is now only a diagnostic for whoever holds the credentials.
+  const usable = configured;
+  const mode: IgMode = !configured
     ? 'unconfigured'
-    : usable && live === true ? 'live' : 'development'; // never 'live' while Meta refuses us — no mode may promise more than canConnect
+    : live === true ? 'live' : 'development';
   // A self-hoster runs their own Meta app and is its developer; the owner tenant of a hosted deployment owns the app we run.
   const tester = !config.hosted || tid === OWNER_TENANT;
   const canConnect = usable && (mode === 'live' || connected || tester);
@@ -233,13 +238,6 @@ function assemble(tid: number): IgAvailability {
   let reason: string;
   if (!configured) {
     reason = 'This server has no Meta app configured, so Instagram cannot be connected here.';
-  } else if (rejected) {
-    // Every reason is a plain statement of fact: the UI adds the call to action, and this string also goes into the
-    // AI prompt, where "leave your address" would be advice the assistant cannot act on. Meta's own error text is
-    // only useful to whoever holds the credentials, so a hosted stranger is not shown it.
-    reason = config.hosted
-      ? "Instagram connections are down at our end — Meta is not accepting our app's credentials right now. It is ours to fix, not something you can change."
-      : `Meta is not accepting this app's credentials${appProbe?.error ? ` (${appProbe.error})` : ''}, so connecting Instagram will not work until META_APP_ID and META_APP_SECRET are fixed.`;
   } else if (mode === 'live') {
     reason = connected ? `Instagram is connected as @${username}.` : 'You can connect an Instagram account.';
   } else if (connected) {
@@ -248,6 +246,12 @@ function assemble(tid: number): IgAvailability {
     reason = 'Our Meta app is in Development mode. Accounts with a tester or admin role on it can connect; everyone else waits until Meta publishes it.';
   } else {
     reason = "Connecting Instagram accounts is waiting on Meta's review of our app. Everything else works without it, and we'll e-mail you the moment it opens.";
+  }
+  // The probe's refusal is still worth knowing — but only to whoever can act on it, and only as an aside. Meta's own
+  // error text never reaches a customer, and it is expected to be present on an Instagram-Login app (see above), so it
+  // is phrased as something to check rather than something that is broken.
+  if (rejected && tester) {
+    reason += ` (Our daily check of the Meta app did not get an answer it could read${appProbe?.error ? `: ${appProbe.error}` : ''}. That is normal for an Instagram-Login app and does not block connecting; set META_APP_LIVE=true once the app is published.)`;
   }
 
   const base = { canConnect, connected, reason };
