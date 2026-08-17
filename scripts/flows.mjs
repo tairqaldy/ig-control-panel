@@ -137,7 +137,7 @@ try {
     ['ask-rail-new', async (p) => { await clickText(p, 'button', 'New', { wait: 600 }); await expectText(p, /Ask it like|What can Ask do|suggest/i); }],
     ['analytics-range', async (p) => { await go(p, '/analytics'); await clickText(p, 'button', '90d', { wait: 2500 }); await expectText(p, /90|Followers/i); }],
     ['automations-toggle', async (p) => { await go(p, '/automations'); const sw = await p.$('main [role="switch"]'); if (!sw) throw new Error('no switch'); await sw.click(); await sleep(1500); await sw.click(); await sleep(1000); }],
-    ['automations-dryrun', async (p) => { await clickText(p, 'button', 'Dry run', { wait: 2000 }); }],
+    ['automations-simulate', async (p) => { await go(p, '/automations'); await clickText(p, 'button', 'New rule', { wait: 1500 }); await clickText(p, 'button', 'Simulate', { wait: 2500 }); await expectText(p, /matched|no rule|would|listens for/i); }],
     ['import-pairing', async (p) => { await go(p, '/import'); await clickText(p, 'button', 'Get pairing code', { wait: 2000 }); await expectText(p, /RSF-/); }],
     ['settings-save', async (p) => { await go(p, '/settings'); await clickText(p, 'button', 'Save changes', { wait: 1500 }); }],
     ['graph-view', async (p) => { await go(p, '/graph', 3000); await clickText(p, 'button', 'View', { wait: 800 }); await expectText(p, /Everything|Map/); }],
@@ -155,14 +155,26 @@ try {
   } else {
   await withPage(browser, 'trial', trialSignup, [
     ['welcome-1', async (p) => { await go(p, '/'); if (!/\/welcome/.test(p.url())) throw new Error('no redirect to welcome: ' + p.url()); await expectText(p, /Bring your saves/i); }],
-    ['welcome-pair', async (p) => { await clickText(p, 'button', 'Get pairing code', { wait: 2000 }); await expectText(p, /RSF-/); }],
+    ['welcome-pair', async (p) => { await clickText(p, 'button, a', 'companion', { wait: 1500 }).catch(() => {}); await clickText(p, 'button', 'pairing code', { wait: 2500 }).catch(() => clickText(p, 'button', 'pair', { wait: 2500 })); await expectText(p, /RSF-/); }],
     ['welcome-2', async (p) => { await go(p, '/welcome?step=2'); await expectText(p, /analy|Waiting|Start/i); }],
     ['welcome-3', async (p) => { await go(p, '/welcome?step=3'); await expectText(p, /Ask/i); }],
     ['ask-quota-pill', async (p) => { await go(p, '/ask'); await expectText(p, /20 questions|\/ 20/i); }],
     ['ask-empty-library', async (p) => { const ta = await p.$('main textarea'); await ta.click(); await p.keyboard.type('hello?'); await p.keyboard.press('Enter'); await sleep(6000); }],
     ['analytics-demo', async (p) => { await go(p, '/analytics'); await expectText(p, /Sample|sample|demo/i); }],
-    ['automations-connect-card', async (p) => { await go(p, '/automations'); await expectText(p, /Connect Instagram/i); }],
-    ['automations-starter-limit', async (p) => { await clickText(p, 'button', 'Add all three', { wait: 2500 }).catch(() => clickText(p, 'button', 'starter', { wait: 2500 })); }],
+    ['automations-honest-about-instagram', async (p) => {
+      await go(p, '/automations', 2500);
+      const av = await apiGet(p, '/api/instagram/availability');
+      const t = await p.evaluate(() => document.body.innerText);
+      if (av.status === 200 && av.body && av.body.canConnect === false) {
+        // Nothing on this page may offer a connection that ends on Meta's error page.
+        const link = await p.evaluate(() => [...document.querySelectorAll('a[href], button')].some((el) => el.offsetParent && /connect instagram/i.test(el.innerText || '')));
+        if (link) throw new Error('a Connect Instagram control is offered while canConnect=false');
+        if (!/review|waiting|not accepting|development|unavailable/i.test(t)) throw new Error('no explanation of why Instagram cannot be connected');
+      } else if (!/connect instagram/i.test(t)) {
+        throw new Error('connecting is possible but the page does not offer it');
+      }
+    }],
+    ['automations-templates', async (p) => { await go(p, '/automations', 2000); await expectText(p, /template|pick a behaviour|start here|comment|story reply/i); }],
     ['upgrade-modal', async (p) => { await go(p, '/'); await clickText(p, 'button', 'Upgrade', { wait: 1500 }); await expectText(p, /Upgrade to Pro|Pro/); }],
     ['upgrade-paddle', async (p) => { await clickText(p, 'button', 'Upgrade to Pro', { wait: 7000 }); const fr = await p.evaluate(() => [...document.querySelectorAll('iframe')].some((f) => /paddle/.test(f.src))); if (!fr) throw new Error('no paddle iframe'); }],
     ['billing-trial', async (p) => { await go(p, '/billing'); await expectText(p, /Trial/); }],
