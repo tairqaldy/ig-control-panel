@@ -2,7 +2,7 @@
 
 ### Self-host or resurfly.com — which one?
 
-Same code. **Self-host** if you want to own the box and the bill: fork, Railway (~$5/mo), your OpenAI key (~$7.5 per 1,000 saves once), done in ~10 minutes. **[resurfly.com](https://resurfly.com)** if you want the result today: sign up, install the Companion, we run the servers and pay OpenAI — 3-day trial (newest 100 saves analyzed), then Pro $12/mo or Studio $34/mo. Connect Instagram is one click there; self-hosters bring their own Meta app. Exports work everywhere, so you can move between the two whenever you like. Details and margins: [BUSINESS.md](BUSINESS.md).
+Same code. **Self-host** if you want to own the box and the bill: fork, Railway (~$5/mo), your OpenAI key (~$7.5 per 1,000 saves once), done in ~10 minutes. **[resurfly.com](https://resurfly.com)** if you want the result today: sign up, install the Companion, we run the servers and pay OpenAI — 3-day trial (newest 100 saves analyzed), then Pro $19/mo or Studio $49/mo, with prepaid credits (500 for $12) if a month runs past the allowance. Connect Instagram is one click there; self-hosters bring their own Meta app. Exports work everywhere, so you can move between the two whenever you like. Details and margins: [BUSINESS.md](BUSINESS.md).
 
 ### Companion or the console script?
 

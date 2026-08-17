@@ -6,7 +6,7 @@ import { db, now, j } from '../db.js';
 import type { Analysis, ItemRow, MediaUrls } from '../types.js';
 import { ANALYSIS_JSON_SCHEMA, ANALYSIS_SYSTEM_PROMPT, buildAnalysisUserPrompt, CATEGORIES } from '../prompts/analysis.js';
 import { download, extractAudio, extractFrames, fileToVisionDataUrl, HttpError, itemDir, mediaAbs, saveThumb, safeName, toVisionDataUrl } from './media.js';
-import { embedTextsWithUsage, embeddingToBuffer, generateStructured, hasOpenAI, isQuotaError, models, transcribeFile } from './openai.js';
+import { embedTextsWithUsage, embeddingToBuffer, generateStructured, hasOpenAI, isQuotaError, models, noteQuotaFailure, transcribeFile } from './openai.js';
 import { enrichFromEmbed } from './importers.js';
 import { indexItem, normalizeTag } from './search.js';
 import { updateNeighborsFor, currentEmbeddingTag } from './neighbors.js';
@@ -89,6 +89,7 @@ export async function processItem(id: string, opts: ProcessOptions = {}): Promis
       setItem(id, { analysis_status: 'done', analysis_error: embedErr, attempts: item.attempts + 1 });
     } catch (e: any) {
       if (isQuotaError(e) || e instanceof QuotaError) {
+        noteQuotaFailure(e);   // arms the breaker so search stops paying for a doomed embedding call
         // Out of OpenAI credits: put the item back to pending (nothing is wrong with it) and let the worker pause.
         // On the hosted service the customer cannot do anything about our OpenAI balance and must not be shown it.
         // Their saves stay pending and resume by themselves; the operator gets the actionable version.

@@ -169,6 +169,31 @@ export function isQuotaError(e: unknown): boolean {
   return /insufficient_quota|no credits remaining|exceeded your current quota|billing_hard_limit|billing/i.test(msg) || /insufficient_quota/i.test(String(code));
 }
 
+/**
+ * Circuit breaker for OpenAI billing outages.
+ *
+ * When the account runs out of credits, every embedding call still costs a full round trip plus the SDK's retries —
+ * about 7 seconds. Optional features (semantic search, related items) then feel broken rather than merely degraded,
+ * on every keystroke. Once a quota error is seen we stop trying for a few minutes and fall straight through to the
+ * keyword path; the first call after that window probes again, so recovery needs no restart.
+ */
+const QUOTA_COOLDOWN_MS = 5 * 60_000;
+let quotaBlockedUntil = 0;
+
+/** Record a quota failure so optional callers can skip OpenAI for a while. */
+export function noteQuotaFailure(e: unknown): boolean {
+  if (!isQuotaError(e)) return false;
+  const first = Date.now() > quotaBlockedUntil;
+  quotaBlockedUntil = Date.now() + QUOTA_COOLDOWN_MS;
+  if (first) console.error(`[openai] out of credits — skipping optional model calls for ${QUOTA_COOLDOWN_MS / 60_000} minutes`);
+  return true;
+}
+
+/** True while we are inside that cooldown. Only optional features should consult this. */
+export function quotaBlocked(): boolean {
+  return Date.now() < quotaBlockedUntil;
+}
+
 export function embeddingToBuffer(v: Float32Array): Buffer {
   return Buffer.from(v.buffer, v.byteOffset, v.byteLength);
 }

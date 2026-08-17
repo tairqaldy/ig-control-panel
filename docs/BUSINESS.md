@@ -56,16 +56,18 @@ Pricing that keeps a healthy margin and stays honest (these are the plans the ho
 | **Self-host** | $0 | this repo, your keys, your server | — | — |
 | **Trial** | free, 3 days | newest **100** saves analyzed on Standard, 20 Ask questions, 1 automation rule, 100 sends | ≈ $0.90 once | acquisition cost |
 | **Free** (after trial) | $0 | browse, search, export what was analyzed; no new analysis, 5 Ask/mo, automations paused | ≈ $0.03/mo | — |
-| **Pro** | **$12 / mo** or **$99 / yr** | up to **2,000** saves analyzed (300 new / mo), 300 Ask / mo, 10 rules, 5,000 sends / mo, 20 harvests / day, priority queue ×2 | month 1 ≈ $13 (1,500-save library on Standard) then ≈ $4.2 / mo | month 1 ≈ −8%, **cumulative break-even in month 2**, then ≈ 65% (annual: ≈ 40% over the year) |
-| **Studio** | **$34 / mo** or **$290 / yr** | up to **10,000** saves (2,000 new / mo), 1,500 Ask / mo, unlimited rules, 25,000 sends / mo, 50 harvests / day, priority queue ×4 | month 1 ≈ $38 (5,000-save library) then ≈ $8 / mo | month 1 ≈ −12%, break-even in month 2, then ≈ 76% |
+| **Pro** | **$19 / mo** or **$144 / yr** ($12 / mo, 37% less) | up to **2,000** saves analyzed (300 new / mo), 300 Ask / mo, 10 rules, 5,000 sends / mo, 20 harvests / day, priority queue ×2 | month 1 ≈ $13 (1,500-save library on Standard) then ≈ $4.2 / mo | month 1 ≈ 32%, then ≈ 78% (annual: ≈ 59% over the year) |
+| **Studio** | **$49 / mo** or **$348 / yr** ($29 / mo, 41% less) | up to **10,000** saves (2,000 new / mo), 1,500 Ask / mo, unlimited rules, 25,000 sends / mo, 50 harvests / day, priority queue ×4 | month 1 ≈ $38 (5,000-save library) then ≈ $8 / mo | month 1 ≈ 22%, then ≈ 84% |
+| **Credits** (top-up, any plan) | **500 / $12 · 2,000 / $39 · 6,000 / $99** | 1 credit = 1 save analyzed = 1 Ask answer = 20 automated replies; spent only after the plan allowance, no expiry | ≈ $0.0076 per analyzed save, ≈ $0.006 per Ask answer | ≈ 68% at $0.024 / credit (higher on Ask and replies) |
 
 Cost lines behind those numbers: analysis $0.0076/save (Standard), Ask ≈ $0.006/question, storage 200 KB/save on R2, ~$0.5–1 amortized compute, Paddle ≈ 5% + $0.50 per charge.
 
 Notes:
 - The initial dig is the only expensive moment. The trial deliberately caps it at 100 saves (≈ $0.90) so a tire-kicker costs less than a coffee, and the *newest* 100 are analyzed so the sample looks like the person's actual taste.
 - Every plan is limited by an *allowance* rather than a hard "your account is broken" wall: hitting a limit returns HTTP 402 with the exact numbers, and the UI turns that into an Upgrade prompt with the plan cards.
-- Worst case for Studio (someone with 10,000 saves analyzed in month 1 on Standard ≈ $76) is a −$42 month; recovered by month 4. If that becomes common, the cheap guard is: Standard for the first 2,000 saves of a library, Economy for the rest (quality on old saves matters less) — this is a one-line policy in the worker, not implemented yet.
-- Show the cost table on the pricing page — "your $12 covers about $4 of API + storage in a normal month; the rest pays for the servers, the harvester upkeep, and the person answering support."
+- Worst case for Studio (someone with 10,000 saves analyzed in month 1 on Standard ≈ $76) is a −$27 month; recovered by month 2. If that becomes common, the cheap guard is: Standard for the first 2,000 saves of a library, Economy for the rest (quality on old saves matters less) — this is a one-line policy in the worker, not implemented yet.
+- Show the cost table on the pricing page — "your $19 covers about $4 of API + storage in a normal month; the rest pays for the servers, the harvester upkeep, and the person answering support."
+- Credits exist so a heavy month does not force an upgrade: when the allowance runs out the app offers both paths. They are prepaid, never expire, and are only spent on analysis, Ask answers and automated replies — never on imports, rule slots or the per-minute Ask rate limit, so a top-up can never look like a way around a rate limit.
 
 ## 4. Data retention (hosted)
 

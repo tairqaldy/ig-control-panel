@@ -26,11 +26,10 @@ export interface DiagnosticsPayload {
 }
 
 /**
- * Where the "put the app in Live mode" explanation lives. The spec calls this anchor `#live-mode`; the heading in
- * `docs/AUTOMATIONS.md` is "5. Development vs Live, and App Review", so we link to the anchor that actually exists.
- * If a `#live-mode` anchor is ever added to that doc, change this one constant.
+ * Where the "put the app in Live mode" explanation lives — the `#live-mode` anchor sits right above
+ * "Getting to Live mode" in `docs/AUTOMATIONS.md`, which also covers Business verification step by step.
  */
-export const LIVE_MODE_DOC = 'https://github.com/tairqaldy/resurfly/blob/main/docs/AUTOMATIONS.md#5-development-vs-live-and-app-review';
+export const LIVE_MODE_DOC = 'https://github.com/tairqaldy/resurfly/blob/main/docs/AUTOMATIONS.md#live-mode';
 const BILLING_HREF = '/billing';
 const CONNECT_HREF = '/api/instagram/connect';
 const PROBE_TIMEOUT_MS = 6000;
@@ -230,7 +229,7 @@ export async function runDiagnostics(tid: number): Promise<DiagnosticsPayload> {
       id: 'app_published',
       label: 'Meta app in Live mode',
       status: 'warn',
-      detail: 'Meta only delivers webhooks to apps that are Live. While the app is in Development mode, Instagram never sends us your DMs or comments. We have not received a single event for this account yet, which is what that looks like.',
+      detail: 'Meta only delivers webhooks to apps that are Live. While the app is in Development mode, Instagram never sends us your DMs or comments. We have not received a single event for this account yet, which is what that looks like. Publishing usually waits on one thing: Business verification in Meta Business settings. Once that clears, the Publish button turns on, and an account with a tester role starts receiving automations without App Review.',
       fix: { label: 'How to switch the app to Live', href: LIVE_MODE_DOC },
     });
   } else if (!creds) {

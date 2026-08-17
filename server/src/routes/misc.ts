@@ -216,7 +216,7 @@ misc.post('/ask', async (c) => {
       // A billing failure on OUR OpenAI account is not the customer's problem and must not show them our billing page.
       // The real error still goes to the server log, where the operator sees it.
       if (isQuotaError(e)) console.error('[ask] OpenAI quota/billing error:', e?.message || e);
-      const message = isQuotaError(e)
+      const message = isQuotaError(e) && !(t === 1)
         ? 'The assistant is briefly unavailable on our side. Nothing was charged to you — try again in a few minutes.'
         : String(e?.message || e);
       await send('error', { message, conversationId: convId });

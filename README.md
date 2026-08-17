@@ -49,7 +49,7 @@ Same code, two ways to use it — the n8n model:
 
 | | **Self-hosted** (this repo) | **Hosted** ([resurfly.com](https://resurfly.com)) |
 |---|---|---|
-| Price | Free (MIT). You pay Railway ~$5/mo + your own OpenAI usage (≈ $7.5 per 1,000 saves once). | 3-day trial, then **Pro $12/mo** or **Studio $34/mo** ([pricing](https://resurfly.com/pricing)). OpenAI is included. |
+| Price | Free (MIT). You pay Railway ~$5/mo + your own OpenAI usage (≈ $7.5 per 1,000 saves once). | 3-day trial, then **Pro $19/mo** or **Studio $49/mo**, plus prepaid credits if one month runs long ([pricing](https://resurfly.com/pricing)). OpenAI is included. |
 | Setup | ~10 minutes: Railway + a volume + an OpenAI key. | Sign up, install the Companion (or run the harvester once), done. |
 | Who's it for | You like owning your data and your bill. | You want the result today and don't want to babysit a server. |
 | Data | Your volume, your key, nothing leaves your box except the OpenAI calls. | Deleted 30 days after you cancel. Same privacy notes as [docs/PRIVACY.md](docs/PRIVACY.md). |

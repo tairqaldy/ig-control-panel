@@ -9,7 +9,7 @@
     "build": "tsup",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/services/automations.test.ts && tsx src/services/credits.test.ts"
+    "test": "tsx src/services/automations.test.ts && tsx src/services/automations-api.test.ts && tsx src/services/credits.test.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",

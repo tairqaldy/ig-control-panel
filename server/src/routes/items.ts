@@ -4,11 +4,10 @@ import { tid } from '../auth.js';
 import type { Analysis, ItemRow } from '../types.js';
 import { keywordSearch, indexItem, normalizeTag } from '../services/search.js';
 import { neighborsOf, semanticSearch, dropEmbedding, setEmbedding } from '../services/neighbors.js';
-import { bufferToEmbedding } from '../services/openai.js';
 import { worker } from '../services/worker.js';
 import { resetItemForReprocess } from '../services/pipeline.js';
 import { removeItemMedia } from '../services/media.js';
-import { hasOpenAI } from '../services/openai.js';
+import { bufferToEmbedding, hasOpenAI, noteQuotaFailure, quotaBlocked } from '../services/openai.js';
 
 export const items = new Hono();
 
@@ -141,11 +140,13 @@ items.get('/', async (c) => {
     const kw = keywordSearch(t, q, 400);
     let ids = kw.map((r) => r.id);
     scoreMap = new Map(kw.map((r) => [r.id, r.score]));
-    if (semantic && hasOpenAI(t)) {
+    // Meaning-search is a bonus on top of the keyword hits, so it must never slow the page down: while OpenAI is
+    // failing on billing we skip it entirely rather than pay a 7-second timeout per search.
+    if (semantic && hasOpenAI(t) && !quotaBlocked()) {
       try {
         const sem = await semanticSearch(t, q, 80);
         for (const s of sem) if (s.score > 0.25 && !scoreMap.has(s.id)) { ids.push(s.id); scoreMap.set(s.id, s.score * 20); }
-      } catch {}
+      } catch (e) { noteQuotaFailure(e); }
     }
     // Also match tag prefix and author quickly
     const like = `%${q.toLowerCase()}%`;
