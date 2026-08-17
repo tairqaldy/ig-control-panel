@@ -20,7 +20,11 @@ const ROUTES = ['/', '/library', '/ask', '/resurface', '/graph', '/analytics', '
 const PUBLIC = ['/', '/pricing', '/privacy', '/privacy/extension', '/terms', '/refunds', '/credits-terms', '/security', '/data-deletion', '/subprocessors', '/dpa', '/login', '/signup'];
 const VIEWPORTS = [['desktop', 1440, 900], ['mobile', 390, 844]];
 
-const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, protocolTimeout: 90000, args: ['--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--lang=en-US'] });
+// 90s was not enough when this runs beside other headless Chromes: three unrelated trial steps failed with
+// `Runtime.callFunctionOn timed out` while the pages themselves were fine (verified separately: every trial page
+// loaded in ~2.6s and three page.evaluate calls took 2-3ms). A harness that reports contention as a product defect
+// is worse than no harness, so the ceiling is high enough that a timeout means something is genuinely stuck.
+const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, protocolTimeout: 240000, args: ['--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--lang=en-US'] });
 const report = [];
 async function sweep(label, routes, loginFn) {
   const ctx = await browser.createBrowserContext();

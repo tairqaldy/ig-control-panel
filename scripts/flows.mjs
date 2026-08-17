@@ -124,7 +124,11 @@ const PROFILE_STEPS = [
   ['profile-questions', async (p) => { const r = await apiGet(p, '/api/profile/questions'); if (r.status !== 200) throw new Error('/api/profile/questions ' + r.status); if (!Array.isArray(r.body?.questions) || !r.body.questions.length) throw new Error('no questions returned'); }],
 ];
 
-const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, protocolTimeout: 90000, args: ['--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--lang=en-US'] });
+// 90s was not enough when this runs beside other headless Chromes: three unrelated trial steps failed with
+// `Runtime.callFunctionOn timed out` while the pages themselves were fine (verified separately: every trial page
+// loaded in ~2.6s and three page.evaluate calls took 2-3ms). A harness that reports contention as a product defect
+// is worse than no harness, so the ceiling is high enough that a timeout means something is genuinely stuck.
+const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, protocolTimeout: 240000, args: ['--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--lang=en-US'] });
 const paywallLocked = await detectPaywall(browser);
 console.log(`paywall: new signups are ${paywallLocked ? 'LOCKED — running the card-wall path' : 'not locked — running the wizard path'}\n`);
 try {
