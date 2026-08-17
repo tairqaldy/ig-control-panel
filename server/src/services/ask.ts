@@ -2,6 +2,10 @@
  * Ask — retrieval + answer generation over the user's saves, plus (round 5) intent routing, strategies,
  * conversations/messages persistence, title summarization and suggested prompts.
  *
+ * Round 6 (§4): the voice is a friend who happens to be a great social-media strategist, and every strategy that can
+ * use it gets the own-content profile from services/ig-content.ts — what the person actually posts — so answers can
+ * connect the library to the account ("saved vs posted") without inventing a single number.
+ *
  * Public surface used by routes/misc.ts (POST /api/ask) and routes/ask.ts (conversations, suggestions):
  *   retrieve(), buildContext(), askStream()            – v1, still exported (askStream accepts an optional plan)
  *   routeIntent(), planAsk(), statsSummary()           – v2 intent routing + the six strategies
@@ -15,6 +19,7 @@ import type { Analysis, ItemRow } from '../types.js';
 import { keywordSearch } from './search.js';
 import { semanticSearch } from './neighbors.js';
 import { generateStructured, models, streamText } from './openai.js';
+import { crossReferenceText, isAccountQuestion, isCrossRefQuestion, ownContentProfile, recentPostsText, type OwnContentProfile } from './ig-content.js';
 import { CATEGORIES } from '../prompts/analysis.js';
 
 export interface AskSource {
@@ -56,65 +61,85 @@ const NANO = 'gpt-5.4-nano';
 /* System prompts                                                      */
 /* ------------------------------------------------------------------ */
 
-const TONE = `Voice: warm and direct. No filler, no marketing words, no emojis. Short paragraphs; bullets when listing. Plain language. Do not repeat the question.`;
+/**
+ * The voice (ROUND6-SPEC §4): a friend who happens to be a great social-media strategist and knows the AI tools
+ * people actually use. Every strategy prompt ends with this block.
+ */
+const VOICE = `Voice — a friend who happens to be a great social-media strategist and knows the AI tools people actually use. Write the way that friend would reply.
+- The answer goes in the first one or two lines. Everything after that is support.
+- Then at most 3-5 short bullets, and only when bullets genuinely help. A lot of good answers are three sentences.
+- No section headers, no bold labels, no numbered outlines, unless the user asked for a document, brief, script or plan.
+- Never restate the question. No preamble, no "great question", no narrating what you are about to do.
+- Contractions are good. Plain words. No marketing language, no hype, no emoji unless the user used them first.
+- Do not list every source you were given; name the two or three that actually matter.
+- If the library has nothing on this, say so plainly in one line and offer the nearest useful thing instead of padding.
+- Keep it to about 180 words unless the user asked for a brief, script or plan.`;
 
-const CITE = `Citations: every save in the context has an id token like [#abc123]. Whenever a sentence or bullet draws on a save, end it with that token exactly as written (several are fine: [#a1] [#b2]). Never invent saves, ids, numbers or quotes that are not in the context.`;
+const CITE = `Citations: every save in the context has an id token like [#abc123]. When a sentence leans on a specific save, end it with that token exactly as written (several are fine: [#a1] [#b2]). Cite the saves you actually used, not all of them. Never invent saves, ids, numbers or quotes that are not in the context.`;
 
-const ASK_SYSTEM = `You are Resurfly, the user's personal librarian for everything they ever saved on Instagram.
-You answer questions ONLY from the provided saves (the "library context").
+/** Rules for the injected own-content profile (services/ig-content.ts). Added to every strategy that can receive one. */
+const OWN = `Their own posts: a section headed "What they post" holds real data pulled from their connected Instagram account. Use those numbers exactly as given, never invent reach, saves, dates or a trend the data does not show, and if a metric is missing say you cannot see it. Refer to one of their posts by what it was about and when ("the carousel about pricing from 12 May"), never by the bare post id — those ids are there for you to keep the posts apart, they must not appear in the answer, and they are not library citations.`;
 
-Rules:
-- Ground every claim in the context. ${CITE}
-- If the context does not contain the answer, say so plainly and suggest what to search for or which tags to explore.
-- Prefer synthesis: group related saves, extract the concrete steps/tips, compare approaches, and point out the single best save to start with.
-- ${TONE}
-- End with a line "Try next:" followed by 2-3 short follow-up questions the user could ask about their library.`;
-
-const STATS_SYSTEM = `You are Resurfly, the user's personal librarian for their Instagram saves. The user is asking about their own saving habits, taste or patterns.
-You get a factual summary of the whole library (counts by category, creator, format, month; spend; evergreen share; top tags) plus a few example saves.
-
-Rules:
-- Answer with the actual numbers from the summary. Turn them into 2-4 observations a good friend would make ("a third of what you save is cooking, mostly reels, mostly from two creators"). Point out one thing that is easy to miss.
-- Use the example saves only to illustrate — ${CITE}
-- Never invent numbers. If the summary is thin (few analyzed saves), say so and suggest analyzing more.
-- ${TONE}
-- End with "Try next:" and 2 short follow-up questions.`;
-
-const INSPIRE_SYSTEM = `You are Resurfly, the user's personal librarian for their Instagram saves. The user wants ideas, prompts or a nudge — things worth doing, trying, revisiting — grounded in what they actually saved.
-The context lists evergreen, high-usefulness saves matching the question; each has a "Nudge" line written for the user.
+const ASK_SYSTEM = `You are Resurfly, the person's own library of everything they ever saved on Instagram. Answer only from the saves in the context.
 
 Rules:
-- Reply with 3-5 concrete prompts or ideas. Each: one bold-free line that says what to do (specific, doable this week), one short line why it fits, and the citation of the save it comes from. ${CITE}
-- Prefer variety (don't give five versions of one save). Rank the most actionable first.
-- If nothing relevant is in the context, say so and suggest 2 tags/categories to look at.
-- ${TONE} No preamble; start with the first idea.`;
+- Lead with the answer, then the two or three saves that carry it. Group what belongs together, pull out the concrete steps, and say which one to start with.
+- ${CITE}
+- If the context does not hold the answer, say so in one line and name the tag or search that probably would.
+- ${VOICE}
+- End with a line "Try next:" followed by 2 short follow-up questions about their library, one per line. That trailer is the only exception to the no-headers rule.`;
 
-const CREATE_SYSTEM = `You are Resurfly, a content strategist who has read every save in the user's Instagram library. The user wants to CREATE something (a reel, carousel, post, story, script, caption). Produce a content brief grounded in their best-matching saves — their remix ideas, hooks, formats and key points.
+const STATS_SYSTEM = `You are Resurfly. The user is asking about their own saving habits, taste or patterns. You get a factual summary of the whole library (counts by category, creator, format, month; spend; evergreen share; top tags), a few example saves, and — when their Instagram is connected — what they actually post plus a measured saved-vs-posted comparison.
 
-Format the brief exactly with these headings (plain text headings, no markdown symbols other than "-" bullets):
-Hook options — 3 hooks (one line each) in the styles that recur in their saves.
-Outline — 4-7 beats or slides, each one line, concrete.
+Rules:
+- Open with the observation that matters most, with the real number in it ("a third of what you save is cooking, almost all reels, mostly two creators"). Then at most three more, including one thing that is easy to miss.
+- Only use numbers that appear in the data you were given. Never compute a trend the data does not show. If the library is thin, say so.
+- When the saved-vs-posted block is there, use it: connect what they keep saving to what they actually publish and name the gap.
+- Use the example saves to illustrate — ${CITE}
+- ${OWN}
+- ${VOICE}
+- End with a line "Try next:" followed by 2 short follow-up questions, one per line. That trailer is the only exception to the no-headers rule.`;
+
+const INSPIRE_SYSTEM = `You are Resurfly. They want ideas, prompts or a nudge — things worth doing, trying or revisiting this week, grounded in what they actually saved. The context lists evergreen, high-usefulness saves matching the request; each has a "Nudge" line.
+
+Rules:
+- One short line to frame the pick, then 3-5 ideas. Each idea is one line: what to do (specific, doable this week), the reason as a clause rather than a sentence, and the citation of the save it came from. ${CITE}
+- Vary them; do not give five versions of one save. Most doable first.
+- When their own posts are in the context, prefer ideas that fit a format that already works for them.
+- ${OWN}
+- If nothing relevant is there, say so and name two tags or categories to look at instead.
+- ${VOICE}`;
+
+const CREATE_SYSTEM = `You are Resurfly, a content strategist who has read every save in this person's library and can see how their own recent posts did. They want to make something (a reel, carousel, post, story, script, caption). Give them a brief they can shoot today, built from their best-matching saves — hooks, formats, remix ideas, key points.
+
+Open with one line saying what this is and why it will land for them. Then these plain-text headings, "-" bullets only, no other markdown:
+Hooks — 3 options, one line each, in the styles that recur in their saves.
+Outline — 4-7 beats or slides, one line each, concrete.
 CTA — one line.
-Format — length, structure, on-screen text, filming notes; borrow from the saves' format notes.
-Why it fits your taste — 2-3 lines tying it to what they keep saving.
+Format — length, structure, on-screen text, filming notes; borrow from the saves' format notes and, when you can see their account, from the format that actually performs for them.
+Why this fits — 2-3 lines tying it to what they keep saving and, when their posts are in the context, to what already worked.
 
 Rules:
-- ${CITE} Cite the saves you borrowed each hook/beat/format from.
-- Be specific to the user's niche as it shows in the saves; never generic "post consistently" advice.
-- If the saves don't support a brief on this topic, say what is missing and propose the closest topic the library does support.
-- ${TONE}`;
+- ${CITE} Cite the save each hook, beat and format note came from.
+- Be specific to their niche as it shows in the saves. Never generic "post consistently" advice.
+- If the saves do not support a brief on this topic, say what is missing in one line and propose the closest topic they do have.
+- ${OWN}
+- ${VOICE}
+- A brief is a document: the headings above are wanted here, and it may run past 180 words.`;
 
-const ANALYTICS_SYSTEM = `You are Resurfly. The user is asking about their own Instagram account performance. You get the last 30 days of account analytics (followers, reach, interactions, profile views, saves, best hours/days, content mix, top posts, hashtags) and, when relevant, a few of their saved posts for inspiration.
+const ANALYTICS_SYSTEM = `You are Resurfly. The question is about their own Instagram account. You get the last 30 days of account analytics (followers, reach, interactions, profile views, saves, best hours/days, content mix, top posts, hashtags), the posts they published recently, and sometimes a few saves that could inspire the next one.
 
 Rules:
-- Answer with the numbers. Lead with the 2-3 things that matter for the question (deltas, best time, what format worked). Round sensibly.
-- Recommend at most 3 concrete actions; when you suggest a post idea and a saved post inspired it, cite it. ${CITE}
-- Never invent metrics that are not in the payload. If a metric is missing, say so briefly.
-- ${TONE}`;
+- Lead with the number that answers the question and what it means. Round sensibly.
+- At most 3 actions, each doable this week. When a saved post inspired an idea, cite it. ${CITE}
+- Only numbers from the payload. If a metric is not there, say so in a clause and move on. Hedge small samples instead of dressing them up.
+- ${OWN}
+- ${VOICE}`;
 
-const CHAT_SYSTEM = `You are Resurfly, the assistant inside the user's personal library of Instagram saves. Answer the question helpfully and briefly. You know roughly what the user saves (a short library summary is provided) — use it only when it genuinely helps; if a few saves are relevant they are listed and can be cited. ${CITE}
-${TONE}
-If the question is really about their saves, their habits, their Instagram numbers or making content, answer as far as you can and mention that asking directly ("what did I save about …", "what do I save most", "my analytics", "content brief for …") gets a fuller answer.`;
+const CHAT_SYSTEM = `You are Resurfly, the assistant inside this person's library of Instagram saves. Answer the question directly and briefly. A short library summary is provided — use it only when it genuinely helps; relevant saves, when listed, can be cited. ${CITE}
+${OWN}
+${VOICE}
+If the question is really about their saves, their habits, their Instagram numbers or making content, answer as far as you can and mention in one clause that asking directly ("what did I save about …", "what do I save most", "my analytics", "content brief for …") gets a fuller answer.`;
 
 /* ------------------------------------------------------------------ */
 /* Retrieval                                                           */
@@ -444,6 +469,7 @@ Pick exactly one intent:
 - create: wants to make content — reel/carousel/post/story/script/caption/hook/content brief/what to post ("write hooks for a reel about X", "content brief for a carousel on Y", "what should I post"). If the question is about what to post AND about their account performance, prefer analytics only when they explicitly mention analytics/numbers/reach/followers.
 - analytics: their own Instagram account performance — followers, reach, best time to post, top posts, engagement, hashtags ("how did I do this month", "best time to post", "why did reach drop").
 - chat: anything else (general knowledge, small talk, how Resurfly works).
+A question that compares the library with the user's own account ("does what I save match what I post", "am I posting what I keep saving") is stats — that strategy sees both sides.
 Also extract optional filters ONLY when explicitly present: category (one of exactly: ${CATEGORIES.join(' | ')} — pick the closest one only when the question clearly names that broad topic), tag (a specific keyword/hashtag), creator (an @handle), type (video|image|carousel — "reels" = video), since (a date like 2025-06-01 or relative like 30d/6m/1y). Otherwise leave them null. When unsure, leave a filter null: filters narrow the search and a wrong one hides good saves.`;
 
 const ROUTER_SCHEMA = {
@@ -480,6 +506,8 @@ export function heuristicIntent(question: string): AskIntent {
     if (k === 'analytics') return 'analytics';
     return 'chat';
   }
+  // "does what I save match what I post" needs both sides — that is the stats strategy (library summary + own posts)
+  if (isCrossRefQuestion(q)) return 'stats';
   if (/\b(followers?|reach|impressions|profile views|engagement( rate)?|best time to post|analytics|insights|my (posts|reels) (did|perform)|how did i do|website clicks)\b/.test(q)) return 'analytics';
   if (/\b(content brief|brief for|write (me )?(a |the )?(hook|hooks|script|caption|carousel|reel|post)|hooks? for|script for|caption for|what should i post|outline for|make (a|my own) (reel|carousel|post|version)|remix)\b/.test(q)) return 'create';
   if (/\b(what do i save|my taste|patterns?|how many|most (saved|often)|who do i save|which categor|breakdown|habits?|top (creators|tags|categories)|spend|spent)\b/.test(q)) return 'stats';
@@ -560,7 +588,9 @@ export async function routeIntent(tid: number, question: string, history: Array<
       user: `${recent ? `Recent conversation:\n${recent}\n\n` : ''}Question:\n${question.slice(0, 1200)}`,
       schemaName: 'ask_route', schema: ROUTER_SCHEMA, maxOutputTokens: 200, effort: 'low',
     });
-    const intent = (ASK_INTENTS as string[]).includes(data?.intent) ? data.intent : heuristicIntent(question);
+    let intent = (ASK_INTENTS as string[]).includes(data?.intent) ? data.intent : heuristicIntent(question);
+    // a saved-vs-posted question only works in the strategy that gets both sides
+    if (isCrossRefQuestion(question) && (intent === 'library' || intent === 'chat' || intent === 'inspire')) intent = 'stats';
     return { intent, filters: cleanFilters(data?.filters, tid, question), via: 'model' };
   } catch {
     return { intent: heuristicIntent(question), filters: {}, via: 'heuristic' };
@@ -584,6 +614,23 @@ export interface AskPlan {
 
 const CONNECT_PATH = '/automations';
 
+/* ---- own-content injection (ROUND6 §4) ---- */
+
+const OWN_HEADING = '## What they post (from their connected Instagram account)';
+const CROSS_HEADING = '## Saved vs posted (measured overlap)';
+
+/** `## What they post` block, or '' when the account has no cached posts. */
+function ownBlock(p: OwnContentProfile, mode: 'full' | 'recent' = 'full'): string {
+  const body = mode === 'recent' ? recentPostsText(p) : p.text;
+  return body ? `\n\n${OWN_HEADING}\n${body}` : '';
+}
+
+/** `## Saved vs posted` block: exact counts of saved topics against the captions of their recent posts. */
+function crossBlock(p: OwnContentProfile, st: StatsSummary): string {
+  const body = crossReferenceText(p, { tags: st.tags, categories: st.categories });
+  return body ? `\n\n${CROSS_HEADING}\n${body}` : '';
+}
+
 /** Build the prompt + sources for one intent. Retrieval happens here (so the route can emit `sources` before streaming). */
 export async function planAsk(tid: number, question: string, routed: RoutedIntent, history: Array<{ role: 'user' | 'assistant'; content: string }> = []): Promise<AskPlan> {
   const { intent, filters } = routed;
@@ -594,27 +641,30 @@ export async function planAsk(tid: number, question: string, routed: RoutedInten
       const st = statsSummary(tid);
       const sources = statsExamples(tid, st.categories);
       const ctx = buildContext(tid, sources, 'inspire');
+      const own = ownContentProfile(tid);
       return {
         intent, filters, sources, system: STATS_SYSTEM, maxOutputTokens: 1200,
-        userMsg: `## Library summary\n${st.text}\n\n## Example saves (most useful per top category)\n${ctx || '(no analyzed saves yet)'}\n\n## Question\n${q}`,
+        userMsg: `## Library summary\n${st.text}\n\n## Example saves (most useful per top category)\n${ctx || '(no analyzed saves yet)'}${ownBlock(own)}${crossBlock(own, st)}\n\n## Question\n${q}`,
       };
     }
     case 'inspire': {
       const sources = await retrieveInspire(tid, q, 8, filters);
       const ctx = buildContext(tid, sources, 'inspire');
+      const own = ownContentProfile(tid);
       return {
         intent, filters, sources, system: INSPIRE_SYSTEM, maxOutputTokens: 1200,
-        userMsg: `## Evergreen, useful saves matching the request (${sources.length} of ${total} analyzed)\n\n${ctx || '(nothing relevant found)'}\n\n## Request\n${q}`,
+        userMsg: `## Evergreen, useful saves matching the request (${sources.length} of ${total} analyzed)\n\n${ctx || '(nothing relevant found)'}${ownBlock(own)}\n\n## Request\n${q}`,
       };
     }
     case 'create': {
       const sources = await retrieve(tid, q, 10, filters);
       const ctx = buildContext(tid, sources, 'create');
       const st = statsSummary(tid);
+      const own = ownContentProfile(tid);
       const taste = [st.categories.slice(0, 4).map((c) => c.name).filter(Boolean).join(', '), st.tags.slice(0, 8).map((t) => t.name).join(', ')].filter(Boolean).join(' · ');
       return {
         intent, filters, sources, system: CREATE_SYSTEM, maxOutputTokens: 1600,
-        userMsg: `## The user's taste (from ${total} analyzed saves)\n${taste || '(library still small)'}\n\n## Best-matching saves with hooks, formats and remix ideas\n\n${ctx || '(nothing relevant found)'}\n\n## Request\n${q}`,
+        userMsg: `## The user's taste (from ${total} analyzed saves)\n${taste || '(library still small)'}\n\n## Best-matching saves with hooks, formats and remix ideas\n\n${ctx || '(nothing relevant found)'}${ownBlock(own)}${crossBlock(own, st)}\n\n## Request\n${q}`,
       };
     }
     case 'analytics': {
@@ -628,9 +678,13 @@ export async function planAsk(tid: number, question: string, routed: RoutedInten
       const wantsIdeas = /\b(post|content|idea|reel|carousel|what should i)\b/i.test(q);
       const sources = wantsIdeas ? await retrieve(tid, q, 5, filters).catch(() => [] as AskSource[]) : [];
       const ctx = sources.length ? buildContext(tid, sources, 'create') : '';
+      // the payload already carries the aggregates, so only the recent-posts list is added here (plus the overlap
+      // block when the question compares the two sides)
+      const own = ownContentProfile(tid);
+      const cross = isCrossRefQuestion(q) ? crossBlock(own, statsSummary(tid)) : '';
       return {
         intent, filters, sources, system: ANALYTICS_SYSTEM, maxOutputTokens: 1400,
-        userMsg: `## Instagram analytics — last 30 days\n${analyticsText(an.payload)}${ctx ? `\n\n## Saved posts that could inspire the next post\n${ctx}` : ''}\n\n## Question\n${q}`,
+        userMsg: `## Instagram analytics — last 30 days\n${analyticsText(an.payload)}${ownBlock(own, 'recent')}${cross}${ctx ? `\n\n## Saved posts that could inspire the next post\n${ctx}` : ''}\n\n## Question\n${q}`,
       };
     }
     case 'chat': {
@@ -638,9 +692,13 @@ export async function planAsk(tid: number, question: string, routed: RoutedInten
       const sources = total ? await retrieve(tid, q, 5, filters).catch(() => [] as AskSource[]) : [];
       const ctx = buildContext(tid, sources, 'library');
       const light = st.totals.total ? `${st.totals.total} saves (${st.totals.analyzed} analyzed). Top categories: ${st.categories.slice(0, 5).map((c) => `${c.name} ${c.n}`).join(', ') || '—'}. Top creators: ${st.creators.slice(0, 4).map((c) => `@${c.name}`).join(', ') || '—'}.` : 'The library is empty so far.';
+      // own content only when the question is actually about the account (chat is the catch-all intent)
+      const aboutAccount = isAccountQuestion(q) || isCrossRefQuestion(q);
+      const own = aboutAccount ? ownContentProfile(tid) : null;
+      const ownTxt = own ? `${ownBlock(own)}${isCrossRefQuestion(q) ? crossBlock(own, st) : ''}` : '';
       return {
         intent, filters, sources, system: CHAT_SYSTEM, maxOutputTokens: 900,
-        userMsg: `## Library summary (light context)\n${light}${ctx ? `\n\n## Possibly relevant saves\n${ctx}` : ''}\n\n## Question\n${q}`,
+        userMsg: `## Library summary (light context)\n${light}${ctx ? `\n\n## Possibly relevant saves\n${ctx}` : ''}${ownTxt}\n\n## Question\n${q}`,
       };
     }
     case 'library':
@@ -703,7 +761,7 @@ export async function summarizeTitle(tid: number, question: string, answer: stri
 /* Suggested prompts                                                   */
 /* ------------------------------------------------------------------ */
 
-export interface AskSuggestion { text: string; intent: AskIntent; kind: 'onboarding' | 'category' | 'creator' | 'season' | 'brief' | 'stats' | 'inspire' | 'analytics' | 'library' }
+export interface AskSuggestion { text: string; intent: AskIntent; kind: 'onboarding' | 'category' | 'creator' | 'season' | 'brief' | 'stats' | 'inspire' | 'analytics' | 'library' | 'crossref' }
 
 const ONBOARDING_PROMPTS: AskSuggestion[] = [
   { text: 'What can you do with my saves?', intent: 'chat', kind: 'onboarding' },
@@ -736,11 +794,19 @@ export async function suggestions(tid: number): Promise<AskSuggestion[]> {
   const recentCreator = (db().prepare("SELECT author_username AS name FROM items WHERE tenant_id = ? AND archived = 0 AND excluded = 0 AND author_username IS NOT NULL AND analysis_status = 'done' ORDER BY COALESCE(saved_at, saved_at_est, taken_at) DESC, id DESC LIMIT 1").get(tid) as { name: string } | undefined)?.name || creators[0]?.name;
   const topTag = st.tags[0]?.name;
   const analytics = await loadAnalytics(tid, 30).catch(() => ({ connected: false, payload: null, available: false }));
+  const own = ownContentProfile(tid);
+  const igOn = own.hasPosts || own.connected || analytics.connected || igConnected(tid);
 
   if (cats[0]) out.push({ text: `What are the best ${cats[0].name.toLowerCase()} saves I should actually use?`, intent: 'library', kind: 'category' });
   out.push({ text: `What do I save most, and what does it say about my taste?`, intent: 'stats', kind: 'stats' });
+  // cross-reference prompts: only meaningful once we can see what they post
+  if (igOn) {
+    out.push({ text: `Does what I save match what I post?`, intent: 'stats', kind: 'crossref' });
+    out.push({ text: `Which of my recent posts is closest to what I keep saving?`, intent: 'analytics', kind: 'crossref' });
+  }
   if (recentCreator) out.push({ text: `What have I saved from @${recentCreator}, in short?`, intent: 'library', kind: 'creator' });
   out.push({ text: seasonHook(), intent: 'inspire', kind: 'season' });
+  if (igOn) out.push({ text: `Give me an idea that uses my best-performing format`, intent: 'create', kind: 'crossref' });
   if (analytics.connected) {
     out.push({ text: `Based on my analytics, what should I post this week?`, intent: 'analytics', kind: 'analytics' });
     out.push({ text: `Content brief for a reel in my niche, using my best-performing format`, intent: 'create', kind: 'brief' });

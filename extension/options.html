@@ -46,8 +46,8 @@
       </div>
     </div>
 
-    <!-- app url -->
-    <div class="card">
+    <!-- app url (hidden in the Chrome Web Store build: it ships for resurfly.com only) -->
+    <div class="card" id="card-app-url">
       <h2>App URL</h2>
       <p>Where your Resurfly runs. Leave it as <code>https://resurfly.com</code> for the hosted version; self-hosters enter their own origin. Chrome will ask you to allow the extension to talk to that site.</p>
       <div class="row" style="margin-top:10px;max-width:460px">
@@ -62,8 +62,9 @@
     <div class="card">
       <h2>What this extension does</h2>
       <p>Every 6 hours (and when you press “Sync now”) it calls Instagram's own saved-posts endpoint <code>/api/v1/feed/saved/posts/</code> in your browser, exactly like the instagram.com web app does, and sends the post metadata (link, caption, creator, thumbnail/video URLs, counts) to your Resurfly. It reads only what you saved. It never posts, likes, follows or messages.</p>
+      <p style="margin-top:8px">You can also right-click any page on instagram.com and pick <strong>Sync my saves to Resurfly</strong> to run a sync straight away, without opening the popup.</p>
       <p style="margin-top:8px">The optional switch “Also harvest when my browser is closed” additionally sends three Instagram cookies (<code>sessionid</code>, <code>csrftoken</code>, <code>ds_user_id</code>) to your Resurfly, where they are stored encrypted and used only for the same read. Turning it off deletes them.</p>
-      <p class="hint">Details: <a href="https://github.com/tairqaldy/resurfly/blob/main/docs/COMPANION.md" target="_blank" rel="noopener">docs/COMPANION.md</a> · <a href="https://github.com/tairqaldy/resurfly/blob/main/docs/PRIVACY.md" target="_blank" rel="noopener">Privacy</a></p>
+      <p class="hint">Details: <a href="https://resurfly.com/privacy/extension" target="_blank" rel="noopener">Privacy policy for this extension</a> · <a href="https://github.com/tairqaldy/resurfly/blob/main/docs/COMPANION.md" target="_blank" rel="noopener">docs/COMPANION.md</a></p>
     </div>
 
     <div class="foot" style="margin-top:16px">

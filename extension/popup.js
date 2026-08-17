@@ -18,6 +18,8 @@ const els = {
   btnGrantOrigin: $('btn-grant-origin'),
   appHost: $('app-host'),
   linkChangeUrl: $('link-change-url'),
+  changeUrlWrap: $('change-url-wrap'),
+  newSince: $('new-since'),
   status: $('status'),
   statusText: $('status-text'),
   statLast: $('stat-last'),
@@ -38,6 +40,16 @@ const els = {
 
 let status = null;
 let pollTimer = null;
+
+/* Store builds ship without optional_host_permissions, so there is no second origin to point the extension at
+   and the "change app URL" affordance is hidden. Self-hosted (unpacked) builds keep it. */
+const SELF_HOSTABLE = (() => {
+  try {
+    const m = chrome.runtime.getManifest();
+    return Array.isArray(m.optional_host_permissions) && m.optional_host_permissions.length > 0;
+  } catch (e) { return false; }
+})();
+if (!SELF_HOSTABLE && els.changeUrlWrap) els.changeUrlWrap.classList.add('hidden');
 
 function fmtAgo(ms) {
   if (!ms) return 'never';
@@ -82,6 +94,12 @@ function render(s) {
   els.statLast.textContent = fmtAgo(s.lastSyncAt);
   els.statNew.textContent = s.lastSyncAt ? fmtNum(s.lastSyncNew || 0) : '—';
   els.statTotal.textContent = fmtNum(s.total);
+
+  // "N new since yesterday" — everything the Companion picked up in the last 24 hours
+  const since = Number(s.newSince24h) || 0;
+  els.newSince.textContent = since > 0
+    ? `${fmtNum(since)} new since yesterday`
+    : (s.lastSyncAt ? 'Nothing new since yesterday' : '');
 
   // status line
   let cls = 'status';

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Resurfly Companion",
   "short_name": "Resurfly",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Syncs the posts you save on Instagram to your Resurfly library every few hours. No copy-pasting scripts.",
   "minimum_chrome_version": "116",
   "icons": {
@@ -31,6 +31,7 @@
   },
   "permissions": [
     "alarms",
+    "contextMenus",
     "storage"
   ],
   "optional_permissions": [

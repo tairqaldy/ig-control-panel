@@ -8,6 +8,8 @@ import type { QueueResponse, Scope, ScopeReport, WorkerStatus } from '../lib/typ
 import { cn } from '../lib/utils';
 import { useQuota } from '../lib/store';
 import { fmtLimit, isUnlimited, meterRemaining, planName } from '../lib/plans';
+import { creditBalance } from '../lib/types-credits';
+import { CreditsLeft } from './Pricing';
 import { Field, Toggle } from './ui';
 
 const usd = (n: number, d = 2) => `$${n.toFixed(d)}`;
@@ -50,7 +52,9 @@ export function AnalysisPlan({ compact = false }: { compact?: boolean }) {
 
   // Hosted allowance (owner tenant behaves like the single-tenant app)
   const metered = !!plan && plan.plan !== 'owner';
-  const remaining = !metered ? Number.POSITIVE_INFINITY : plan!.effectivePlan === 'free' ? 0 : Math.min(meterRemaining(plan!.usage?.analyze), meterRemaining(plan!.usage?.analyzeMonth));
+  const allowanceLeft = !metered ? Number.POSITIVE_INFINITY : plan!.effectivePlan === 'free' ? 0 : Math.min(meterRemaining(plan!.usage?.analyze), meterRemaining(plan!.usage?.analyzeMonth));
+  // The server queues up to allowance + credits (1 credit = 1 save), so the button must count credits too.
+  const remaining = !metered ? Number.POSITIVE_INFINITY : allowanceLeft + creditBalance(plan);
   const willQueue = Math.min(r.counts.eligiblePending, Number.isFinite(remaining) ? remaining : r.counts.eligiblePending);
   const leftOut = Math.max(0, r.counts.eligiblePending - willQueue);
   const allowanceText = (() => {
@@ -90,6 +94,7 @@ export function AnalysisPlan({ compact = false }: { compact?: boolean }) {
           <div className={cn('mt-3 flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 text-[12.5px]', remaining <= 0 || leftOut > 0 ? 'border-warn/30 bg-warn-soft' : 'border-line bg-surface-2/60')}>
             <Info size={14} className={cn('shrink-0', remaining <= 0 || leftOut > 0 ? 'text-warn' : 'text-accent')} />
             <span className="text-ink-2">{allowanceText}{leftOut > 0 && remaining > 0 ? ` · ${leftOut.toLocaleString()} left out` : ''}</span>
+            {metered && allowanceLeft <= 0 && <CreditsLeft metric="analyze" className="text-ink-2" />}
             {(leftOut > 0 || remaining <= 0) && <button onClick={() => openUpgrade({ reason: leftOut > 0 ? `Analyze the ${leftOut.toLocaleString()} saves that don't fit your allowance` : undefined })} className="ml-auto btn btn-sm btn-primary">Upgrade</button>}
           </div>
         )}

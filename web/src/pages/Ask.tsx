@@ -10,6 +10,8 @@ import type { AskIntent, AskMessage, AskMode, AskSuggestion, Conversation } from
 import { deleteConversation, getConversation, getSuggestions, isMissingEndpoint, listConversations, MODE_INTENT, streamAsk, updateConversation } from '../lib/ask';
 import { useItemModal, useAuth, useQuota } from '../lib/store';
 import { fmtLimit, isUnlimited, meterFull, planName } from '../lib/plans';
+import { creditBalance } from '../lib/types-credits';
+import { CreditsLeft } from '../components/Pricing';
 import { cn } from '../lib/utils';
 import { ConversationRail } from '../components/ask/ConversationRail';
 import { Composer, type ComposerHandle } from '../components/ask/Composer';
@@ -125,7 +127,9 @@ export default function Ask() {
 
   /* ---------------- quota (hosted) ---------------- */
   const askMeter = plan && plan.plan !== 'owner' ? plan.usage?.ask : undefined;
-  const askBlocked = !!plan && plan.plan !== 'owner' && (plan.effectivePlan === 'free' || meterFull(askMeter));
+  const askAllowanceUsed = !!plan && plan.plan !== 'owner' && (plan.effectivePlan === 'free' || meterFull(askMeter));
+  // The server lets credits pay for a question once the monthly allowance is gone, so don't stop the composer here.
+  const askBlocked = askAllowanceUsed && creditBalance(plan) <= 0;
 
   /* ---------------- scrolling ---------------- */
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -297,7 +301,8 @@ export default function Ask() {
   const meter = askMeter ? (
     <button type="button" onClick={() => openUpgrade()} className={cn('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] transition-colors', askBlocked ? 'border-warn/50 bg-warn-soft text-warn' : 'border-line bg-surface text-muted hover:border-line-2 hover:text-ink')} title="Questions this month on your plan">
       <span className={cn('h-1.5 w-1.5 rounded-full', askBlocked ? 'bg-warn' : 'bg-accent')} />
-      {plan?.effectivePlan === 'free' ? `${planName(plan.plan)} · Ask is paused` : <>{askMeter.used.toLocaleString()} / {fmtLimit(askMeter.limit)} questions this month{!isUnlimited(askMeter.limit) && ` · ${planName(plan?.effectivePlan)}`}</>}
+      {plan?.effectivePlan === 'free' && askBlocked ? `${planName(plan.plan)} · Ask is paused` : <>{askMeter.used.toLocaleString()} / {fmtLimit(askMeter.limit)} questions this month{!isUnlimited(askMeter.limit) && ` · ${planName(plan?.effectivePlan)}`}</>}
+      {askAllowanceUsed && <CreditsLeft metric="ask" />}
       {askBlocked && <span className="font-medium">· Upgrade</span>}
     </button>
   ) : null;

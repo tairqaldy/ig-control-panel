@@ -17,7 +17,8 @@
     "start": "npm run start -w server",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
     "docker:build": "docker build -t resurfly .",
-    "docker:run": "docker run --rm -p 8080:8080 --env-file .env -v resurfly-data:/data resurfly"
+    "docker:run": "docker run --rm -p 8080:8080 --env-file .env -v resurfly-data:/data resurfly",
+    "test": "npm run test -w server"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

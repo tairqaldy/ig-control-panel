@@ -34,17 +34,28 @@ automations.get('/status', async (c) => {
 
 automations.get('/rules', (c) => c.json({ rules: listRules(tid(c)) }));
 
+/**
+ * `media_ids` (migration 007): the Instagram posts a comment rule is limited to. Accepts an array or a
+ * comma-separated string; an empty selection is stored as NULL, which the engine reads as "every post".
+ */
+function mediaIdsJson(v: unknown): string | null {
+  if (v === null || v === undefined || v === '') return null;
+  const list = (Array.isArray(v) ? v : String(v).split(',')).map((s) => String(s).trim()).filter(Boolean);
+  return list.length ? JSON.stringify(list) : null;
+}
+
 automations.post('/rules', async (c) => {
   const t = tid(c);
   const q = checkQuota(t, 'rules', 1);
   if (!q.ok) return quotaResponse(c, q);
   const b = await c.req.json<any>();
   const ts = now();
-  const info = db().prepare(`INSERT INTO automation_rules (tenant_id, name, enabled, trigger_type, match_mode, keywords, reply_text, reply_link, public_reply_text, cooldown_minutes, priority, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+  const info = db().prepare(`INSERT INTO automation_rules (tenant_id, name, enabled, trigger_type, match_mode, keywords, reply_text, reply_link, public_reply_text, cooldown_minutes, priority, media_ids, once_per_person, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     t, String(b.name || 'Untitled rule').slice(0, 80), b.enabled === false ? 0 : 1, b.trigger_type || 'dm_keyword', b.match_mode || 'contains',
     JSON.stringify(Array.isArray(b.keywords) ? b.keywords : String(b.keywords || '').split(',').map((s: string) => s.trim()).filter(Boolean)),
-    String(b.reply_text || ''), b.reply_link || null, b.public_reply_text || null, Number.isFinite(Number(b.cooldown_minutes)) ? Number(b.cooldown_minutes) : 1440, Number.isFinite(Number(b.priority)) ? Number(b.priority) : 100, ts, ts,
+    String(b.reply_text || ''), b.reply_link || null, b.public_reply_text || null, Number.isFinite(Number(b.cooldown_minutes)) ? Number(b.cooldown_minutes) : 1440, Number.isFinite(Number(b.priority)) ? Number(b.priority) : 100,
+    mediaIdsJson(b.media_ids), b.once_per_person ? 1 : 0, ts, ts,
   );
   return c.json({ rule: db().prepare('SELECT * FROM automation_rules WHERE id = ? AND tenant_id = ?').get(info.lastInsertRowid, t) });
 });
@@ -55,11 +66,13 @@ automations.put('/rules/:id', async (c) => {
   const b = await c.req.json<any>();
   const cur = db().prepare('SELECT * FROM automation_rules WHERE id = ? AND tenant_id = ?').get(id, t) as any;
   if (!cur) return c.json({ error: 'not found' }, 404);
-  db().prepare(`UPDATE automation_rules SET name = ?, enabled = ?, trigger_type = ?, match_mode = ?, keywords = ?, reply_text = ?, reply_link = ?, public_reply_text = ?, cooldown_minutes = ?, priority = ?, updated_at = ? WHERE id = ? AND tenant_id = ?`).run(
+  db().prepare(`UPDATE automation_rules SET name = ?, enabled = ?, trigger_type = ?, match_mode = ?, keywords = ?, reply_text = ?, reply_link = ?, public_reply_text = ?, cooldown_minutes = ?, priority = ?, media_ids = ?, once_per_person = ?, updated_at = ? WHERE id = ? AND tenant_id = ?`).run(
     String(b.name ?? cur.name).slice(0, 80), b.enabled === undefined ? cur.enabled : b.enabled ? 1 : 0, b.trigger_type ?? cur.trigger_type, b.match_mode ?? cur.match_mode,
     b.keywords === undefined ? cur.keywords : JSON.stringify(Array.isArray(b.keywords) ? b.keywords : String(b.keywords).split(',').map((s: string) => s.trim()).filter(Boolean)),
     b.reply_text ?? cur.reply_text, b.reply_link === undefined ? cur.reply_link : b.reply_link || null, b.public_reply_text === undefined ? cur.public_reply_text : b.public_reply_text || null,
-    b.cooldown_minutes ?? cur.cooldown_minutes, b.priority ?? cur.priority, now(), id, t,
+    b.cooldown_minutes ?? cur.cooldown_minutes, b.priority ?? cur.priority,
+    b.media_ids === undefined ? cur.media_ids : mediaIdsJson(b.media_ids), b.once_per_person === undefined ? cur.once_per_person : b.once_per_person ? 1 : 0,
+    now(), id, t,
   );
   return c.json({ rule: db().prepare('SELECT * FROM automation_rules WHERE id = ? AND tenant_id = ?').get(id, t) });
 });
@@ -131,7 +144,17 @@ webhooks.post('/instagram', async (c) => {
     return c.text('Bad signature', 401);
   }
   const events = parseWebhookBody(t, body);
-  if (!events.length) logSystemEvent(t, 'Webhook received (no actionable events)', body);
+  if (!events.length) {
+    // Name the fields Meta actually sent: "no actionable events" alone cannot tell a founder whether the payload
+    // was an echo of their own reply, a field we do not act on, or a shape we failed to read.
+    const fields = new Set<string>();
+    for (const entry of body?.entry || []) {
+      if (entry?.messaging?.length) fields.add('messaging');
+      for (const ch of entry?.changes || []) if (ch?.field) fields.add(String(ch.field));
+    }
+    const seen = fields.size ? [...fields].join(', ') : 'none';
+    logSystemEvent(t, `Webhook received but nothing to act on (fields: ${seen})`, body, 'no_match');
+  }
   // Respond fast; process async.
   (async () => {
     for (const ev of events) {

@@ -90,7 +90,12 @@ export async function processItem(id: string, opts: ProcessOptions = {}): Promis
     } catch (e: any) {
       if (isQuotaError(e) || e instanceof QuotaError) {
         // Out of OpenAI credits: put the item back to pending (nothing is wrong with it) and let the worker pause.
-        setItem(id, { analysis_status: 'pending', analysis_error: 'Paused: OpenAI account has no credits — add credits and press Resume.' });
+        // On the hosted service the customer cannot do anything about our OpenAI balance and must not be shown it.
+        // Their saves stay pending and resume by themselves; the operator gets the actionable version.
+        const hostedCustomer = config.hosted && tid !== 1;
+        setItem(id, { analysis_status: 'pending', analysis_error: hostedCustomer
+          ? 'Paused on our side for a moment. Your saves are safe and analysis resumes automatically.'
+          : 'Paused: OpenAI account has no credits — add credits and press Resume.' });
         throw new QuotaError(String(e?.message || e));
       }
       const msg = String(e?.message || e).slice(0, 800);

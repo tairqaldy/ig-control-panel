@@ -81,15 +81,36 @@ Click **Test connection** on the Automations page — it calls `/me` and should 
 
 ### 5. Development vs Live, and App Review
 
-Top of the Meta dashboard: switch the app from **Development** to **Live**. Meta asks for a **Privacy Policy URL** under Settings → Basic — use `https://<your-domain>/privacy` (Resurfly serves [docs/PRIVACY.md](PRIVACY.md) there) or the GitHub link to that file. Terms of service: `https://<your-domain>/terms`.
+**This is the one setting that decides whether automations work at all.** Meta's own words, from the [Instagram webhooks reference](https://developers.facebook.com/docs/instagram-platform/webhooks): *apps must be set to Live in the App Dashboard to receive webhook notifications.*
 
-Why: in Development mode Meta only delivers webhooks for accounts that have a role on the app (admins, developers, Instagram testers). Comments and DMs from real people only arrive when the app is **Live**.
+Not "fewer notifications" in Development mode — **none**. A rule can be perfect, the account connected, the webhook subscribed and the signature valid, and still nothing happens, because Instagram never sends the event. There is no error to see, because there is no request. This is why Resurfly's health card raises `Meta app in Live mode` as soon as an account has been connected for five minutes without a single inbound event.
 
-App Review:
+<a id="live-mode"></a>
 
-- **Your own account (self-host):** Standard Access is enough — you are the app admin and an Instagram tester. **No App Review.** Live mode is still required so real users' events are delivered.
-- **Other people connecting to your server (a hosted deployment):** the four scopes above need **Advanced Access**, i.e. App Review with a screencast of the Connect flow, the automations and the analytics page. Until approved, only accounts with a tester/developer role can connect. resurfly.com goes through this review; if you fork the hosted mode, so must you.
+#### Getting to Live mode
+
+Meta gates the Live switch behind a checklist (App dashboard → **Publish**). In order:
+
+1. **Settings → Basic:** app icon (1024×1024), category, **Privacy Policy URL** `https://<your-domain>/privacy`, **Terms of Service URL** `https://<your-domain>/terms`, **User data deletion** → `https://<your-domain>/api/instagram/delete` (Resurfly implements Meta's signed-request deletion callback).
+2. **Business verification** — the slow one. In [Business settings → Business info](https://business.facebook.com/settings/business_info) fill in the **registered legal name, address, phone and website exactly as they appear on your paperwork**, then submit documents Meta can match against a public registry: certificate of incorporation / business registration, a tax document, a bank or utility statement in the business's name. Meta then verifies by phone, e-mail, or a code sent to the address. Days to a few weeks, and it fails on mismatched details more often than on missing ones — a website whose domain doesn't match the business name, or an address written differently than on the certificate.
+   **You need a registered entity.** A personal Instagram account and a domain are not enough; if you have no company yet, registering one (sole proprietorship in most countries) is a prerequisite, not a formality.
+3. **Publish.** Once verification clears, the Publish button turns on and the app flips to Live. Webhooks start arriving immediately — no redeploy, no reconnect.
+
+#### What App Review does and does not cover
+
+- **Your own account:** Standard Access ("Ready for testing") plus an Instagram tester role is enough. **No App Review needed** — but Live mode is still required, because Live is what turns webhook delivery on.
+- **Other people's accounts (hosted):** the four scopes need **Advanced Access** via App Review — a screencast of the Connect flow, the automations page and the analytics page. Until then only accounts with a tester/developer role can connect.
 - Not used anywhere: Human-agent tag (7-day window), `pages_*` permissions, Facebook Login.
+
+#### While you wait
+
+Everything except delivery can be built and checked today:
+
+- **Simulate** in the rule builder runs the real matcher against your real rules and shows which rule would answer and why the others wouldn't. No Instagram call.
+- **Send to…** performs a genuine DM through the Graph API (it needs a person who messaged you inside the 24-hour window) — that proves the token and permissions independently of webhooks.
+- The **health card** tells you which of the seven links in the chain is broken, in plain language.
+
+**Status for resurfly.com (17 Aug 2026):** app `1578560403654755` is in Development mode. The Publish page lists *Business verification: not verified* and the Publish button is disabled. The business portfolio "Resurfly" (`2018572538790775`) exists but has no legal name, address, phone or website on file yet — step 2 above has not been started. Until it is, no DM, comment or story reply will reach the server, for the owner or anyone else.
 
 ## Create rules
 

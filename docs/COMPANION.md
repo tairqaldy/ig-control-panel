@@ -27,11 +27,15 @@ Works in Chrome, Edge, Brave, Vivaldi and other Chromium browsers (Chrome 116+).
 
 Analysis starts as soon as items land (newest first, within your plan's allowance); the Import page and the sidebar show progress.
 
-The popup shows the last sync time, how many new saves the last run found and the size of your library. The icon shows a jade badge with the number of new saves for 24 hours after a sync that found something; an amber `!` means Instagram signed you out and a sync is waiting for you to log in again.
+You can also right-click any page on instagram.com and pick **Sync my saves to Resurfly** — the same sync as the popup button, without opening the popup. If the browser is not paired yet, the item opens the Options page instead.
+
+The popup shows the last sync time, how many new saves the last run found, a line with how many saves arrived **since yesterday** (everything the last 24 hours of syncs picked up) and the size of your library. The icon shows a jade badge with the number of new saves for 24 hours after a sync that found something; an amber `!` means Instagram signed you out and a sync is waiting for you to log in again.
 
 You can pair several browsers; each is a separate device in **Settings → Companion** (or **Import → Companion**) with its last sync time, where you can also revoke it. Every run is recorded server-side (`harvest_runs`: source companion / server / script / zip / urls, items imported, new items; `GET /api/companion/runs`). Removing the pairing from the extension's Options page deletes the token locally and stops syncing.
 
 ## What is sent, and where
+
+The published policy for this extension is at <https://resurfly.com/privacy/extension> — it covers the same ground as this section plus retention, deletion and contact, and it is the URL listed in the Chrome Web Store listing.
 
 To **your Resurfly** (`https://resurfly.com` or your own URL), authenticated with the device token from pairing:
 
@@ -40,7 +44,7 @@ To **your Resurfly** (`https://resurfly.com` or your own URL), authenticated wit
 
 To **Instagram**: `GET https://www.instagram.com/api/v1/feed/saved/posts/?max_id=…` — the same request the instagram.com web app makes when you open your Saved tab, sent from the extension with your browser's own cookies. Headers: `x-ig-app-id`, `x-requested-with: XMLHttpRequest`, and `x-csrftoken` only if you have granted the optional cookies permission (see below). Nothing is written to Instagram — no likes, follows, comments, or messages.
 
-Locally (chrome.storage.local): the app URL, the device token, sync bookkeeping (last sync time/result, resumable cursor). Nothing else.
+Locally (chrome.storage.local): the app URL, the device token, sync bookkeeping (last sync time/result, resumable cursor, and a 7-day list of `{ when, how many }` for the "since yesterday" line). Nothing else.
 
 ## Opt-in: “Also harvest when my browser is closed”
 
@@ -55,9 +59,22 @@ Switching it off calls `DELETE /api/companion/session`, which wipes the stored s
 
 Why this is opt-in and separate: a session cookie is the equivalent of being logged in as you. The browser-side sync never needs it to leave your machine; only the “while my browser is closed” convenience does.
 
+## Two builds
+
+Same source, one difference in the manifest:
+
+| | `resurfly-companion-<v>.zip` (dev / self-hoster) | `resurfly-companion-<v>-store.zip` (Chrome Web Store) |
+| --- | --- | --- |
+| Built with | `node extension/build-zip.mjs` | `node extension/build-zip.mjs --store` |
+| `optional_host_permissions` | `https://*/*`, `http://localhost/*`, `http://127.0.0.1/*` | removed |
+| App-URL field in Options | shown | hidden |
+| Talks to | any origin you grant | resurfly.com only |
+
+The store build drops the wildcard because a reviewer reads `https://*/*` as "this extension wants every site", which is the single fastest way to earn a long manual review. `popup.js` and `options.js` decide at runtime by reading `chrome.runtime.getManifest().optional_host_permissions`, so the store build never shows a control it cannot honour. Publishing walkthrough: [CHROME-STORE-GUIDE.md](CHROME-STORE-GUIDE.md); field-by-field copy: [`extension/STORE-LISTING.md`](../extension/STORE-LISTING.md).
+
 ## Self-hosting
 
-The extension ships with permission for `https://www.instagram.com/*` and `https://resurfly.com/*` only — no `<all_urls>`. To point it at your own instance:
+The extension ships with permission for `https://www.instagram.com/*` and `https://resurfly.com/*` only — no `<all_urls>`. Pointing it somewhere else needs the dev build (load unpacked, or the plain zip from Releases) — the Web Store version connects to resurfly.com only. Then:
 
 1. Right-click the extension icon → **Options** (or click **change** in the popup).
 2. Enter your app origin, e.g. `https://saves.example.com` (or `http://localhost:8080` for development) and press **Save**. Chrome shows a permission prompt for that origin (`optional_host_permissions` in the manifest cover `https://*/*`, `http://localhost/*`, `http://127.0.0.1/*`).
@@ -67,28 +84,30 @@ The URL cannot be changed while paired — remove the pairing first.
 
 ## Building
 
-There is no bundler. Two scripts, both plain Node (run from the repo root):
+There is no bundler. Three scripts, all plain Node (run from the repo root):
 
 - `node extension/build-icons.mjs` — renders `web/public/favicon.svg` to `extension/icons/icon{16,32,48,128}.png` with `sharp` (already a server dependency). The PNGs are committed; rerun only when the favicon changes.
-- `node extension/validate.mjs` — parses the manifest, checks required keys and referenced files, runs `node --check` on every JS file, verifies relative imports resolve and that `extension/lib/core.js` is byte-identical to `harvester/core.js`.
+- `node extension/validate.mjs` — parses the manifest, checks required keys and referenced files, checks that no permission appears without a justification in `STORE-LISTING.md` and that no wildcard host crept in, runs `node --check` on every JS file, verifies relative imports resolve and that `extension/lib/core.js` is byte-identical to `harvester/core.js`.
+- `node extension/build-zip.mjs [--store]` — validates, then writes `extension/dist/resurfly-companion-<version>[-store].zip` with the runtime files only.
 
 `extension/lib/core.js` is a copy of `harvester/core.js` (the shared normalization used by the server, the console script and the extension). Refresh it with `node harvester/build.mjs` (which copies it) or simply `cp harvester/core.js extension/lib/core.js`.
 
-To publish: zip the contents of `extension/` (not the folder itself) and upload to the Chrome Web Store dashboard; bump `version` in `manifest.json` for each release.
+To publish: bump `version` in `manifest.json`, run `node extension/build-zip.mjs --store`, upload the `-store` zip. The full walkthrough — developer account, listing fields, Privacy-practices answers, rejection codes — is in [CHROME-STORE-GUIDE.md](CHROME-STORE-GUIDE.md).
 
 ## Files
 
 | File | Role |
 | --- | --- |
-| `manifest.json` | MV3 manifest: `alarms`, `storage`; optional `cookies`; hosts instagram.com + resurfly.com; optional hosts for self-hosters |
-| `background.js` | Service worker: 6-hour alarm → sync, resumable first run, badge, message hub for popup/options |
-| `popup.html/.css/.js` | Pair, status (last sync, new, library size), Sync now, the server-side opt-in switch |
-| `options.html/.js` | App URL (with origin permission prompt), pairing/unpair, what-it-does text; opened once after install |
+| `manifest.json` | MV3 manifest: `alarms`, `contextMenus`, `storage`; optional `cookies`; hosts instagram.com + resurfly.com; optional hosts for self-hosters (stripped by `--store`) |
+| `background.js` | Service worker: 6-hour alarm → sync, resumable first run, badge, instagram.com context menu, 24-hour new-saves tally, message hub for popup/options |
+| `popup.html/.css/.js` | Pair, status (last sync, new, since yesterday, library size), Sync now, the server-side opt-in switch |
+| `options.html/.js` | App URL (dev build only, with origin permission prompt), pairing/unpair, what-it-does text; opened once after install |
 | `lib/core.js` | Copy of `harvester/core.js`: endpoint paths, headers, `normalizeItem` |
 | `lib/api.js` | Device-token client for `/api/companion/*` with retries |
 | `lib/sync.js` | The sync algorithm (pagination, stop rules, chunked upload, login detection) |
 | `lib/store.js` | `chrome.storage.local` keys |
-| `build-icons.mjs`, `validate.mjs` | Build helpers |
+| `build-icons.mjs`, `validate.mjs`, `build-zip.mjs` | Build helpers |
+| `STORE-LISTING.md` | Every Chrome Web Store field, ready to paste |
 
 ## Troubleshooting
 

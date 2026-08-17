@@ -2,7 +2,8 @@ import { Hono } from 'hono';
 import { config } from '../config.js';
 import { clearSessionCookie, currentTenant, invalidateSessions } from '../auth.js';
 import { db, now } from '../db.js';
-import { getTenant, planCatalog, planPayload } from '../services/plans.js';
+import { getTenant, paddlePublic, planCatalog, planPayload } from '../services/plans.js';
+import { creditsPayload } from '../services/credits.js';
 import { createPortalSession, handlePaddleEvent, verifyPaddleSignature } from '../services/paddle.js';
 import { removeItemMedia } from '../services/media.js';
 import { dropTenantEmbeddings } from '../services/neighbors.js';
@@ -68,6 +69,15 @@ account.delete('/account', async (c) => {
 
 /* ---------------- auth: billing ---------------- */
 export const billing = new Hono();
+
+/**
+ * Balance, ledger and the pack catalogue for the Billing page. Same `credits` block as `GET /api/plan`, with a longer
+ * ledger, plus what Paddle.js needs to open the one-time checkout for a pack.
+ */
+billing.get('/credits', (c) => {
+  const s = currentTenant(c)!;
+  return c.json({ ...creditsPayload(s.tid, 50), paddle: { ...paddlePublic(), customData: { tenant_id: s.tid } } });
+});
 
 /** Customer portal (manage subscription, payment method, invoices). */
 billing.post('/portal', async (c) => {

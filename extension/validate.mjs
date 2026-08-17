@@ -33,11 +33,18 @@ if (manifest.name !== 'Resurfly Companion') bad('name must be "Resurfly Companio
 if (!/^\d+(\.\d+){1,3}$/.test(manifest.version)) bad('version must be dotted integers'); else ok('version ' + manifest.version);
 if (manifest.background && manifest.background.type !== 'module') bad('background.type should be "module" (lib/*.js are ES modules)'); else ok('background is a module worker');
 const perms = manifest.permissions || [];
-for (const p of ['alarms', 'storage']) (perms.includes(p) ? ok : bad)(`permission "${p}"`);
+for (const p of ['alarms', 'contextMenus', 'storage']) (perms.includes(p) ? ok : bad)(`permission "${p}"`);
+// anything beyond these needs a fresh justification in extension/STORE-LISTING.md before it ships
+const ALLOWED_PERMS = new Set(['alarms', 'contextMenus', 'storage']);
+const extra = perms.filter((p) => !ALLOWED_PERMS.has(p));
+(extra.length ? bad : ok)(extra.length ? `unjustified permission(s): ${extra.join(', ')}` : 'no permissions beyond the justified set');
 ((manifest.optional_permissions || []).includes('cookies') ? ok : bad)('optional permission "cookies"');
 const hosts = manifest.host_permissions || [];
 (hosts.includes('https://www.instagram.com/*') ? ok : bad)('host permission instagram.com');
+(hosts.includes('https://resurfly.com/*') ? ok : bad)('host permission resurfly.com');
 (hosts.some((h) => /<all_urls>|^\*:\/\/\*\/\*$/.test(h)) ? bad : ok)('no <all_urls> in host_permissions');
+// the repo manifest is the dev/self-hoster build; `build-zip.mjs --store` strips this key for the store zip
+((manifest.optional_host_permissions || []).includes('https://*/*') ? ok : bad)('dev manifest keeps optional_host_permissions for self-hosters');
 
 // referenced files
 const files = new Set();

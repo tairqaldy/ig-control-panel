@@ -13,6 +13,7 @@ import { companion, companionDevice } from './companion.js';
 import { startCompanionJobs } from '../services/companion.js';
 import { askV2 } from './ask.js';
 import { onboarding } from './onboarding.js';
+import { automationsExtra, instagramMedia } from './automations-extra.js';
 
 export function mountPublicExtras(app: Hono) {
   void app;
@@ -26,4 +27,5 @@ export function mountProtectedExtras(app: Hono) {
   app.route('/api/instagram', instagram); app.route('/api/automations', automationsStarter); startInstagramJobs(); // connect, account, analytics, starter rules + OWNER_PLAN/token-refresh boot hook (server-instagram agent)
   app.route('/api/companion', companion); startCompanionJobs(); // pair-code, devices, runs, notice + server-side harvest scheduler (server-companion agent)
   app.route('/api/ask', askV2); app.route('/api/onboarding', onboarding); // conversations, suggestions, onboarding (server-ask agent)
+  app.route('/api/automations', automationsExtra); app.route('/api/instagram', instagramMedia); // diagnostics, simulate, resubscribe, per-rule test-send + post picker (server-automations agent)
 }

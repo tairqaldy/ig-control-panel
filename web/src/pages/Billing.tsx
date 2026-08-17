@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { toast } from 'sonner';
-import { CreditCard, ExternalLink, Sparkles, Receipt, Trash2, AlertTriangle, RefreshCw, Download } from 'lucide-react';
+import { CreditCard, ExternalLink, Sparkles, Receipt, Trash2, AlertTriangle, RefreshCw, Download, Coins } from 'lucide-react';
 import { api } from '../lib/api';
 import type { PlanCatalogEntry, PlanId } from '../lib/types';
 import { useAuth, useQuota } from '../lib/store';
 import { daysLeft, fmtLimit, isUnlimited, planName, toMs } from '../lib/plans';
+import { CREDIT_RULE_LINE, CREDIT_UNIT_LINE, creditsFromPlan, fmtCredits, ledgerReason } from '../lib/types-credits';
 import { fmtDate } from '../lib/utils';
 import { PageHeader, Modal, Skeleton } from '../components/ui';
 import { IntervalToggle, PricingCards, UsageBar, usePlansCatalog, type Interval } from '../components/Pricing';
-import { useUpgradeCheckout } from '../components/UpgradeModal';
+import { CreditPacks, useUpgradeCheckout } from '../components/UpgradeModal';
 
 const fmtTs = (t: number | null | undefined) => { const ms = toMs(t); return ms ? fmtDate(Math.floor(ms / 1000)) : ''; };
 
@@ -61,6 +62,8 @@ export default function Billing() {
 
   const onChoose = (p: PlanCatalogEntry, iv: Interval) => { void checkout(p, iv); };
   const u = plan?.usage;
+  const credits = creditsFromPlan(plan, catalog.creditPacks);
+  const showCredits = !!plan && plan.plan !== 'owner';
 
   return (
     <div className="max-w-5xl">
@@ -105,11 +108,52 @@ export default function Billing() {
             </div>
           </div>
 
+          {/* Credits */}
+          {showCredits && (
+            <div className="card p-5 mb-4">
+              <div className="flex flex-wrap items-start gap-4">
+                <div className="h-11 w-11 shrink-0 grid place-items-center rounded-xl bg-accent-soft text-accent"><Coins size={20} /></div>
+                <div className="min-w-[220px] flex-1">
+                  <div className="eyebrow mb-0.5">Credits</div>
+                  <div className="flex items-baseline gap-2"><span className="display text-[30px] tabular">{fmtCredits(credits.balance)}</span><span className="text-[13px] text-muted">credit{credits.balance === 1 ? '' : 's'} left</span></div>
+                  <p className="text-[12.5px] text-muted mt-1 max-w-xl leading-relaxed">{CREDIT_UNIT_LINE} {CREDIT_RULE_LINE}</p>
+                </div>
+              </div>
+              <div className="mt-4">
+                <h3 className="text-[14px] font-semibold mb-2">Buy credits</h3>
+                <CreditPacks packs={credits.packs} onDone={() => { void refreshPlan(); }} />
+                <div className="mt-2 text-[12px] text-muted">One-time purchase through Paddle, same receipt address as your plan. Prepaid credits are non-refundable once spent.</div>
+              </div>
+              <div className="mt-5">
+                <div className="flex items-baseline justify-between gap-2 mb-2"><h3 className="text-[14px] font-semibold">Credit history</h3><span className="text-[11.5px] text-muted">Most recent first</span></div>
+                {credits.ledger.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-line px-3 py-4 text-[12.5px] text-muted">Nothing yet. Purchases and every credit spent on analysis, Ask or automated replies show up here.</div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-line">
+                    <table className="w-full text-[12.5px]">
+                      <thead className="bg-surface-2/60 text-muted"><tr><th className="text-left font-medium px-3 py-2">When</th><th className="text-left font-medium px-3 py-2">What</th><th className="text-right font-medium px-3 py-2">Change</th><th className="text-right font-medium px-3 py-2">Balance</th></tr></thead>
+                      <tbody>
+                        {credits.ledger.map((row) => (
+                          <tr key={row.id} className="border-t border-line">
+                            <td className="px-3 py-2 text-muted whitespace-nowrap">{row.createdAt ? fmtDate(row.createdAt) : '—'}</td>
+                            <td className="px-3 py-2 text-ink-2">{ledgerReason(row.reason)}</td>
+                            <td className={`px-3 py-2 text-right font-mono tabular ${row.delta >= 0 ? 'text-accent' : 'text-ink-2'}`}>{row.delta >= 0 ? '+' : '−'}{fmtCredits(Math.abs(row.delta))}</td>
+                            <td className="px-3 py-2 text-right font-mono tabular text-muted">{row.balanceAfter === null ? '—' : fmtCredits(row.balanceAfter)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Plans */}
           {plan.plan !== 'owner' && (
             <div className="mb-4">
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-3"><div><div className="eyebrow mb-0.5">Plans</div><h3 className="text-[15px] font-semibold">Compare and switch</h3></div><IntervalToggle value={interval} onChange={setInterval} /></div>
-              <PricingCards catalog={catalog} interval={interval} onChoose={onChoose} current={(plan.plan as PlanId)} busyPlan={busyPlan} hideTrial compact ctaLabel={(p) => (plan.plan === 'studio' && p.id === 'pro' ? 'Switch to Pro' : isPaid ? `Switch to ${p.name}` : `Upgrade to ${p.name}`)} />
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-3"><div><div className="eyebrow mb-0.5">Plans</div><h3 className="text-[15px] font-semibold">Compare and switch</h3></div><IntervalToggle value={interval} onChange={setInterval} catalog={catalog} /></div>
+              <PricingCards catalog={catalog} interval={interval} onChoose={onChoose} current={(plan.plan as PlanId)} busyPlan={busyPlan} hideTrial compact hideCreditNote={showCredits} ctaLabel={(p) => (plan.plan === 'studio' && p.id === 'pro' ? 'Switch to Pro' : isPaid ? `Switch to ${p.name}` : `Upgrade to ${p.name}`)} />
               <div className="mt-2 text-[12px] text-muted">Switching plans mid-period is prorated by Paddle. Downgrades apply at the next renewal.</div>
             </div>
           )}

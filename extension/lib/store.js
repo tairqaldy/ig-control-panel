@@ -25,6 +25,8 @@
  *   minIntervalMinutes number  from /state (default 360) — alarm-triggered syncs closer than this are skipped
  *   syncing           number   epoch ms lock while a sync runs (stale after 15 min)
  *   badgeUntil        number   epoch ms when the numeric badge should clear
+ *   newLog            array    [{ at: ms, n: number }] one entry per sync that found saves, pruned to 7 days —
+ *                              the popup's "N new since yesterday" line sums the last 24 h
  */
 
 export const DEFAULT_APP_URL = 'https://resurfly.com';
@@ -33,7 +35,7 @@ export const KEYS = [
   'appUrl', 'token', 'tenantId', 'deviceName', 'pairedAt', 'serverHarvest',
   'firstRunDone', 'walk',
   'lastSyncAt', 'lastSyncStatus', 'lastSyncError', 'lastSyncNew', 'lastSyncImported',
-  'total', 'lastHarvestAt', 'harvestQuota', 'serverHarvestStatus', 'serverHarvestAvailable', 'minIntervalMinutes', 'syncing', 'badgeUntil',
+  'total', 'lastHarvestAt', 'harvestQuota', 'serverHarvestStatus', 'serverHarvestAvailable', 'minIntervalMinutes', 'syncing', 'badgeUntil', 'newLog',
 ];
 
 export async function getAll() {

@@ -6,6 +6,7 @@ import { MessageCircle, MessageSquare, Clapperboard, Send, Save, Pencil, Zap, Ch
 import { api, ApiError } from '../../lib/api';
 import type { Rule } from '../../lib/types';
 import type { StarterKey, StarterRulesResponse } from '../../lib/types-instagram';
+import { type AutomationRule, type RuleDraft, EMPTY_DRAFT, draftFromRule, familyOf, fmtCooldown } from '../../lib/types-automations';
 import { useQuota } from '../../lib/store';
 import { meterFull } from '../../lib/plans';
 import { cn } from '../../lib/utils';
@@ -20,29 +21,27 @@ export const STARTERS: StarterTemplate[] = [
 ];
 const DEFAULT_COOLDOWN: Record<StarterKey, number> = { comment_link: 1440, dm_welcome: 10080, story_thanks: 1440 };
 const DEFAULT_PRIORITY: Record<StarterKey, number> = { comment_link: 10, dm_welcome: 50, story_thanks: 60 };
-/** "once a day per person" — the cooldown in words for the When / Then line. */
-export function fmtCooldown(min: number): string {
-  if (!min || min <= 0) return 'every time';
-  if (min < 60) return `at most once every ${min} min per person`;
-  if (min < 1440) return `at most once every ${Math.round(min / 60)} h per person`;
-  if (min === 1440) return 'once a day per person';
-  if (min === 10080) return 'once a week per person';
-  return `at most once every ${Math.round(min / 1440)} days per person`;
-}
 const NAME_RX: Record<StarterKey, RegExp> = { comment_link: /comment keyword|dm the link/i, dm_welcome: /first dm|welcome/i, story_thanks: /story reply|thanks/i };
 
 const parseKw = (s: string | null | undefined): string[] => { try { const a = JSON.parse(s || '[]'); return Array.isArray(a) ? a.map(String) : []; } catch { return []; } };
 const sameKw = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x.toLowerCase() === (b[i] || '').toLowerCase());
 
 /** Which existing rule (if any) a starter card is bound to: server mapping first, then name, then "same trigger + same default keywords". */
-export function bindStarter(tpl: StarterTemplate, rules: Rule[], mapping?: Partial<Record<StarterKey, number>>): Rule | null {
+export function bindStarter(tpl: StarterTemplate, rules: AutomationRule[], mapping?: Partial<Record<StarterKey, number>>): AutomationRule | null {
   const byMap = mapping?.[tpl.key]; if (byMap) { const r = rules.find((x) => x.id === byMap); if (r) return r; }
   const byName = rules.find((r) => r.trigger_type === tpl.triggerType && NAME_RX[tpl.key].test(r.name));
   if (byName) return byName;
   return rules.find((r) => r.trigger_type === tpl.triggerType && sameKw(parseKw(r.keywords), tpl.keywords)) ?? null;
 }
 
-function StarterCard({ tpl, rule, latestSenderId, onEditAll, canCreate, onBlockedCreate }: { tpl: StarterTemplate; rule: Rule | null; latestSenderId: string | null; onEditAll: (r: Rule) => void; canCreate: boolean; onBlockedCreate: () => void }) {
+/** A starter card's current state as a builder draft: the saved rule when it exists, otherwise the template. */
+export function draftFromStarter(tpl: StarterTemplate, rule: AutomationRule | null, keywords: string, reply: string): RuleDraft {
+  const kw = keywords.split(',').map((x) => x.trim()).filter(Boolean);
+  const base = rule ? draftFromRule(rule) : { ...EMPTY_DRAFT, name: tpl.name, enabled: false, trigger: familyOf(tpl.triggerType), publicReplyText: tpl.publicReply ?? '', cooldownMinutes: DEFAULT_COOLDOWN[tpl.key], priority: DEFAULT_PRIORITY[tpl.key] };
+  return { ...base, keywords: kw, replyText: reply };
+}
+
+function StarterCard({ tpl, rule, latestSenderId, onOpenBuilder, canCreate, onBlockedCreate }: { tpl: StarterTemplate; rule: AutomationRule | null; latestSenderId: string | null; onOpenBuilder: (d: RuleDraft) => void; canCreate: boolean; onBlockedCreate: () => void }) {
   const qc = useQueryClient();
   const initialKw = rule ? parseKw(rule.keywords).join(', ') : tpl.keywords.join(', ');
   const initialReply = rule ? rule.reply_text : tpl.reply;
@@ -98,7 +97,7 @@ function StarterCard({ tpl, rule, latestSenderId, onEditAll, canCreate, onBlocke
         {dirty && <button onClick={() => { if (!rule && !canCreate) { onBlockedCreate(); return; } save.mutate(enabled); }} disabled={save.isPending} className="btn btn-primary btn-sm"><Save size={12} /> {save.isPending ? 'Saving…' : rule ? 'Save changes' : 'Add rule'}</button>}
         <button onClick={() => setTestOpen((o) => !o)} className="btn btn-sm" aria-expanded={testOpen}><Send size={12} /> Send me a test <ChevronDown size={11} className={cn('transition-transform', testOpen && 'rotate-180')} /></button>
         <button onClick={() => dryRun.mutate()} disabled={dryRun.isPending} className="btn btn-ghost btn-sm text-muted" title="Check which rule would answer the first keyword. Nothing is sent."><FlaskConical size={12} /> Dry run</button>
-        {rule && <button onClick={() => onEditAll(rule)} className="btn btn-ghost btn-sm text-muted ml-auto"><Pencil size={12} /> All options</button>}
+        <button onClick={() => onOpenBuilder(draftFromStarter(tpl, rule, kw, reply))} className="btn btn-ghost btn-sm text-muted ml-auto"><Pencil size={12} /> {rule ? 'All options' : 'Open in builder'}</button>
       </div>
       <AnimatePresence initial={false}>
         {testOpen && (
@@ -121,7 +120,7 @@ function StarterCard({ tpl, rule, latestSenderId, onEditAll, canCreate, onBlocke
  * "Quick start": the 3 starter templates as editable cards bound to the tenant's starter rules (ROUND5-SPEC §2).
  * Cards work before the rules exist (Enable/Add creates them) and after (edits go straight to the rule).
  */
-export function QuickStart({ rules, latestSenderId, onEditAll, className }: { rules: Rule[]; latestSenderId: string | null; onEditAll: (r: Rule) => void; className?: string }) {
+export function QuickStart({ rules, latestSenderId, onOpenBuilder, className }: { rules: AutomationRule[]; latestSenderId: string | null; onOpenBuilder: (d: RuleDraft) => void; className?: string }) {
   const qc = useQueryClient();
   const { plan, openUpgrade } = useQuota();
   const metered = !!plan && plan.plan !== 'owner';
@@ -130,24 +129,24 @@ export function QuickStart({ rules, latestSenderId, onEditAll, className }: { ru
   // Server-side mapping (starter key → rule id) when the server exposes it read-only; falls back to name/trigger binding.
   const mapping = useQuery({
     queryKey: ['starter-rules'],
-    queryFn: async () => { try { const r = await api.get<StarterRulesResponse<Rule> | string>('/api/automations/starter'); const m: Partial<Record<StarterKey, number>> = {}; if (r && typeof r === 'object') for (const x of r.rules || []) if (x?.starter_key) m[x.starter_key] = x.id; return m; } catch (e) { if (e instanceof ApiError && (e.status === 404 || e.status === 405)) return {} as Partial<Record<StarterKey, number>>; throw e; } },
+    queryFn: async () => { try { const r = await api.get<StarterRulesResponse<AutomationRule> | string>('/api/automations/starter'); const m: Partial<Record<StarterKey, number>> = {}; if (r && typeof r === 'object') for (const x of r.rules || []) if (x?.starter_key) m[x.starter_key] = x.id; return m; } catch (e) { if (e instanceof ApiError && (e.status === 404 || e.status === 405)) return {} as Partial<Record<StarterKey, number>>; throw e; } },
     staleTime: 60_000, retry: false,
   });
   const bound = useMemo(() => STARTERS.map((tpl) => ({ tpl, rule: bindStarter(tpl, rules, mapping.data) })), [rules, mapping.data]);
   const missing = bound.filter((b) => !b.rule).length;
   const addAll = useMutation({
-    mutationFn: () => api.post<StarterRulesResponse<Rule>>('/api/automations/starter'),
+    mutationFn: () => api.post<StarterRulesResponse<AutomationRule>>('/api/automations/starter'),
     onSuccess: (r) => { toast.success(r?.created ? `Added ${r.created} starter rule${r.created === 1 ? '' : 's'} (off until you switch them on)` : 'Starter rules are already there'); if (r?.leftOut) toast(`${r.leftOut} did not fit your plan's rule limit`, { action: { label: 'Upgrade', onClick: () => openUpgrade() } }); qc.invalidateQueries({ queryKey: ['rules'] }); qc.invalidateQueries({ queryKey: ['starter-rules'] }); qc.invalidateQueries({ queryKey: ['plan'] }); },
     onError: (e: any) => { if (e?.status === 402) return; toast.error(e?.status === 404 ? 'This server has no starter endpoint yet — use Enable on a card instead.' : e?.message || 'Could not add starter rules'); },
   });
   return (
     <section className={className}>
       <div className="flex flex-wrap items-end justify-between gap-2 mb-3">
-        <div><div className="eyebrow mb-1">Quick start</div><h2 className="display text-[22px]">Three rules most creators want</h2><div className="text-[12.5px] text-muted">Change the keywords and the reply, then switch on. Cooldown, priority and the link live under “All options”.</div></div>
+        <div><div className="eyebrow mb-1">Quick start</div><h2 className="display text-[22px]">Three rules most creators want</h2><div className="text-[12.5px] text-muted">Change the keywords and the reply, then switch on. Post picking, limits and priority live in the builder.</div></div>
         {missing > 0 && <button onClick={() => (rulesFull ? blocked() : addAll.mutate())} disabled={addAll.isPending} className="btn btn-sm"><Zap size={13} className="text-accent" /> {addAll.isPending ? 'Adding…' : missing === 3 ? 'Add all three (off)' : `Add the missing ${missing} (off)`}</button>}
       </div>
       <div className="grid md:grid-cols-3 gap-3">
-        {bound.map(({ tpl, rule }) => <StarterCard key={tpl.key} tpl={tpl} rule={rule} latestSenderId={latestSenderId} onEditAll={onEditAll} canCreate={!rulesFull} onBlockedCreate={blocked} />)}
+        {bound.map(({ tpl, rule }) => <StarterCard key={tpl.key} tpl={tpl} rule={rule} latestSenderId={latestSenderId} onOpenBuilder={onOpenBuilder} canCreate={!rulesFull} onBlockedCreate={blocked} />)}
       </div>
     </section>
   );

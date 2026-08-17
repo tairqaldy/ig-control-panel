@@ -4,6 +4,7 @@
  * - alarm 'resurfly-sync' every 6 h → syncNow('alarm')
  * - alarm 'resurfly-continue' (1 min) → resumes a walk that ran out of page budget
  * - alarm 'resurfly-badge' → clears the "N new" badge after 24 h
+ * - context menu on instagram.com: "Sync my saves to Resurfly" → syncNow('menu')
  * - messages from popup/options: getStatus · syncNow · pair · unpair · setServerHarvest · setAppUrl · refreshState
  *
  * All network calls to Resurfly and Instagram happen here so the device token never leaves this file's storage.
@@ -13,6 +14,9 @@ import { pair as apiPair, createClient, ApiError, normalizeAppUrl } from './lib/
 import { runSync } from './lib/sync.js';
 import * as store from './lib/store.js';
 
+const MENU_ID = 'resurfly-sync-saves';
+const MENU_PATTERNS = ['https://www.instagram.com/*', 'https://instagram.com/*'];
+const DAY_MS = 24 * 60 * 60 * 1000;
 const SYNC_ALARM = 'resurfly-sync';
 const CONTINUE_ALARM = 'resurfly-continue';
 const BADGE_ALARM = 'resurfly-badge';
@@ -87,6 +91,37 @@ async function ensureAlarms() {
   if (!a) chrome.alarms.create(SYNC_ALARM, { periodInMinutes: SYNC_PERIOD_MIN, delayInMinutes: 1 });
 }
 
+/* ---------------- context menu (instagram.com only) ---------------- */
+/** One item, "Sync my saves to Resurfly", shown when the user right-clicks a page on instagram.com. */
+async function ensureContextMenu() {
+  if (!chrome.contextMenus) return;
+  await new Promise((resolve) => { try { chrome.contextMenus.removeAll(resolve); } catch (e) { resolve(); } });
+  try {
+    chrome.contextMenus.create({
+      id: MENU_ID,
+      title: 'Sync my saves to Resurfly',
+      contexts: ['page'],
+      documentUrlPatterns: MENU_PATTERNS,
+    }, () => { void chrome.runtime.lastError; });
+  } catch (e) { /* ignore */ }
+}
+
+/* ---------------- "new since yesterday" ---------------- */
+/** Append one sync's new-save count and drop entries older than a week. */
+async function recordNew(n) {
+  const cutoff = Date.now() - 7 * DAY_MS;
+  const { newLog } = await store.get(['newLog']);
+  const log = (Array.isArray(newLog) ? newLog : []).filter((e) => e && Number(e.at) > cutoff);
+  if (n > 0) log.push({ at: Date.now(), n });
+  await store.set({ newLog: log.slice(-200) });
+}
+
+/** Saves the Companion found in the last 24 hours. */
+export function newSince(log, windowMs = DAY_MS) {
+  const from = Date.now() - windowMs;
+  return (Array.isArray(log) ? log : []).reduce((sum, e) => (e && Number(e.at) >= from ? sum + (Number(e.n) || 0) : sum), 0);
+}
+
 /* ---------------- sync ---------------- */
 export async function syncNow(reason = 'manual') {
   const st = await store.getAll();
@@ -98,6 +133,8 @@ export async function syncNow(reason = 'manual') {
     if (Date.now() - st.lastSyncAt < minMs - 60 * 1000) return { status: 'skipped' };
   }
 
+  // runSync reports run-cumulative counts, so a resumed walk already had its earlier new saves recorded
+  const alreadyCounted = st.walk && typeof st.walk === 'object' ? Number(st.walk.newItems) || 0 : 0;
   current = { running: true, text: 'Checking Resurfly…', startedAt: Date.now(), reason };
   await store.set({ syncing: Date.now() });
   broadcast({ type: 'sync:started', reason });
@@ -122,6 +159,7 @@ export async function syncNow(reason = 'manual') {
     lastSyncImported: result.imported || 0,
   };
   await store.set(patch);
+  await recordNew(Math.max(0, (result.newItems || 0) - alreadyCounted));
 
   // refresh the server-side total after we sent something (cheap, one GET)
   if (result.sent > 0 && result.status !== 'unpaired') {
@@ -214,11 +252,13 @@ async function getStatus() {
   return {
     ...st,
     token: undefined,
+    newLog: undefined,
     paired: !!st.token,
     originGranted: originOk,
     cookiesGranted: cookiesOk,
     running: current.running,
     progressText: current.text,
+    newSince24h: newSince(st.newLog),
     version: chrome.runtime.getManifest().version,
   };
 }
@@ -247,6 +287,7 @@ async function refreshState() {
 /* ---------------- events ---------------- */
 chrome.runtime.onInstalled.addListener(async (details) => {
   await ensureAlarms();
+  await ensureContextMenu();
   await restoreBadge();
   if (details.reason === 'install') {
     // onboarding: the options page explains pinning + pairing
@@ -256,8 +297,18 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
 chrome.runtime.onStartup.addListener(async () => {
   await ensureAlarms();
+  await ensureContextMenu();
   await restoreBadge();
 });
+
+if (chrome.contextMenus && chrome.contextMenus.onClicked) {
+  chrome.contextMenus.onClicked.addListener(async (info) => {
+    if (info && info.menuItemId !== MENU_ID) return;
+    const { token } = await store.get(['token']);
+    if (!token) { try { await chrome.runtime.openOptionsPage(); } catch (e) { /* ignore */ } return; }
+    await syncNow('menu');
+  });
+}
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === SYNC_ALARM) await syncNow('alarm');
@@ -283,6 +334,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true; // async response
 });
 
-// keep the alarm/badge in shape when the worker wakes up for any reason
+// keep the alarm/menu/badge in shape when the worker wakes up for any reason
 ensureAlarms().catch(() => {});
+ensureContextMenu().catch(() => {});
 restoreBadge().catch(() => {});

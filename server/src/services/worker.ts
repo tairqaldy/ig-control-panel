@@ -3,7 +3,8 @@ import { db, getMeta, GLOBAL, now, OWNER_TENANT, setMeta } from '../db.js';
 import { hasOpenAI, usesSharedKey } from './openai.js';
 import { processItem, QuotaError } from './pipeline.js';
 import { budgetExhausted, getScope, scopeWhereSql } from './scope.js';
-import { bumpUsage, checkQuota, effectivePlan, getTenant, PLAN_WEIGHTS, PLANS, type QuotaCheck } from './plans.js';
+import { chargeMetered, checkQuota, effectivePlan, getTenant, PLAN_WEIGHTS, PLANS, type QuotaCheck } from './plans.js';
+import { creditBalance, creditUnitsAvailable } from './credits.js';
 
 export interface EnqueueResult {
   /** items actually queued now */
@@ -92,6 +93,10 @@ class Worker {
       FROM items WHERE tenant_id = ? AND archived = 0`).get(tid) as any;
     const plan = effectivePlan(getTenant(tid));
     const quota = plan === 'owner' ? null : checkQuota(tid, 'analyze');
+    const credits = plan === 'owner' ? 0 : creditBalance(tid);
+    // Nothing will move until the tenant upgrades or buys credits — the saves stay pending, they are never dropped.
+    const stalled = !!quota && !quota.ok;
+    const waiting = (counts.queued || 0) + (counts.unqueued_pending || 0);
     return {
       paused: this.isPaused(tid),
       pauseReason: this.pauseReason(tid),
@@ -112,17 +117,26 @@ class Worker {
       startedAt: this.startedAt,
       plan,
       // hosted: how much analysis allowance is left (null = unlimited)
-      quota: quota ? { used: quota.used, limit: Number.isFinite(quota.limit) ? quota.limit : null, remaining: Number.isFinite(quota.remaining) ? quota.remaining : null, resetsAt: quota.resetsAt, ok: quota.ok } : null,
-      planBlocked: plan === 'free',
+      quota: quota ? { used: quota.used, limit: Number.isFinite(quota.limit) ? quota.limit : null, remaining: Number.isFinite(quota.remaining) ? quota.remaining : null, resetsAt: quota.resetsAt, ok: quota.ok, okAllowance: quota.okAllowance, wouldUseCredits: quota.wouldUseCredits } : null,
+      planBlocked: plan === 'free' && !(quota && quota.ok),
+      // credits: what is left, and how many saves are waiting because both the allowance and the credits are gone
+      credits,
+      creditsUsable: plan === 'owner' ? null : creditUnitsAvailable(tid, 'analyze'),
+      blocked: stalled,
+      blockedPending: stalled ? waiting : 0,
+      blockedReason: stalled ? (plan === 'free' ? 'plan' : 'allowance') : null,
     };
   }
 
-  /** Remaining analysis allowance for a tenant, minus what is already queued/running (so repeated queueing never over-commits). */
+  /**
+   * Remaining analysis allowance for a tenant, minus what is already queued/running (so repeated queueing never
+   * over-commits). Credits extend the allowance: one credit = one more save analyzed.
+   */
   private allowance(tid: number): { remaining: number; quota: QuotaCheck | null } {
     const q = checkQuota(tid, 'analyze');
     if (q.limit === Infinity) return { remaining: Infinity, quota: null };
     const inFlight = (db().prepare("SELECT COUNT(*) AS n FROM items WHERE tenant_id = ? AND queue_state IN ('queued','running')").get(tid) as any).n as number;
-    return { remaining: Math.max(0, q.remaining - inFlight), quota: q };
+    return { remaining: Math.max(0, q.remaining + creditUnitsAvailable(tid, 'analyze') - inFlight), quota: q };
   }
 
   /**
@@ -216,14 +230,16 @@ class Worker {
       const tenant = getTenant(tid);
       if (!tenant || tenant.deleted_at) continue;
       const plan = effectivePlan(tenant);
-      if (plan === 'free') continue; // trial ended / subscription lapsed: items stay pending until upgrade
       const cap = plan === 'owner' ? Infinity : PLANS[plan].concurrency;
       const here = runningPer.get(tid) || 0;
       if (here >= cap) continue;
       if (budgetExhausted(tid)) { if (this.pauseReason(tid) !== 'budget') this.pause(tid, 'budget'); continue; }
+      // Allowance first, then credits. With neither (expired trial, lapsed subscription, month used up and no credits)
+      // the items simply stay queued/pending until the tenant upgrades or tops up — nothing is failed or dropped.
       const q = checkQuota(tid, 'analyze');
       if (!q.ok) continue;
-      cands.push({ tid, weight: PLAN_WEIGHTS[plan] || 1, capacity: Math.min(cap - here, q.remaining, r.n) });
+      const budget = q.limit === Infinity ? Infinity : q.remaining + creditUnitsAvailable(tid, 'analyze');
+      cands.push({ tid, weight: PLAN_WEIGHTS[plan] || 1, capacity: Math.min(cap - here, budget, r.n) });
     }
     // Newest saves first (saved_rank asc), never excluded ones. `run()` flips queue_state synchronously, so re-selecting is safe.
     const next = d.prepare("SELECT id FROM items WHERE tenant_id = ? AND queue_state = 'queued' AND excluded = 0 ORDER BY saved_rank ASC, queued_at ASC LIMIT 1");
@@ -253,7 +269,7 @@ class Worker {
       const st = db().prepare('SELECT analysis_status, analysis_error, analyzed_at FROM items WHERE id = ?').get(id) as any;
       ok = st?.analysis_status === 'done';
       note = ok ? undefined : st?.analysis_error || st?.analysis_status;
-      if (ok && st?.analyzed_at && st.analyzed_at !== (before?.analyzed_at ?? null)) bumpUsage(tid, 'analyze', 1);
+      if (ok && st?.analyzed_at && st.analyzed_at !== (before?.analyzed_at ?? null)) chargeMetered(tid, 'analyze', 1, `item:${id}`);
       if (!ok) { this.failed.set(tid, (this.failed.get(tid) || 0) + 1); this.lastErrors.set(tid, note || ''); } else this.processed.set(tid, (this.processed.get(tid) || 0) + 1);
     } catch (e: any) {
       ok = false;

@@ -1,4 +1,5 @@
-/* /privacy, /terms, /refunds — the markdown documents in docs/ rendered as public pages (ROUND5 §8b).
+/* /privacy, /privacy/extension, /security, /terms, /refunds — the markdown documents in docs/ rendered as public
+   pages (ROUND5 §8b, ROUND6 §6).
    Paddle (live) and Meta (Live mode) both need these URLs on the domain. Same header/footer as the landing. */
 import { useEffect } from 'react';
 import { Link, useLocation } from 'react-router';
@@ -8,17 +9,23 @@ import { cn } from '../lib/utils';
 import privacy from '../../../docs/PRIVACY.md?raw';
 import terms from '../../../docs/legal/TERMS.md?raw';
 import refunds from '../../../docs/legal/REFUNDS.md?raw';
+import extensionPrivacy from '../../../docs/legal/EXTENSION-PRIVACY.md?raw';
+import security from '../../../docs/legal/SECURITY.md?raw';
 
 const DOCS = {
   '/privacy': { label: 'Privacy', source: privacy },
+  '/privacy/extension': { label: 'Extension privacy', source: extensionPrivacy },
+  '/security': { label: 'Security', source: security },
   '/terms': { label: 'Terms', source: terms },
   '/refunds': { label: 'Refunds', source: refunds },
 } as const;
 type LegalPath = keyof typeof DOCS;
+/* Longest path first so /privacy/extension is not swallowed by /privacy. */
+const PATHS = (Object.keys(DOCS) as LegalPath[]).sort((a, b) => b.length - a.length);
 
 export default function Legal() {
   const { pathname } = useLocation();
-  const path = (Object.keys(DOCS) as LegalPath[]).find((p) => pathname === p || pathname.startsWith(p + '/')) ?? '/privacy';
+  const path = PATHS.find((p) => pathname === p || pathname.startsWith(p + '/')) ?? '/privacy';
   const doc = DOCS[path];
   const title = markdownTitle(doc.source) ?? doc.label;
   useEffect(() => { document.title = `${title} — Resurfly`; window.scrollTo(0, 0); return () => { document.title = 'Resurfly'; }; }, [title, path]);

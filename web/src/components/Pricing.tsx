@@ -1,28 +1,33 @@
 import { useId } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'motion/react';
-import { Check } from 'lucide-react';
+import { Check, Coins } from 'lucide-react';
 import { api } from '../lib/api';
 import type { PlanCatalogEntry, PlanId, PlansCatalog, UsageMeter } from '../lib/types';
-import { DEFAULT_CATALOG, fmtLimit, isUnlimited, meterPct, normalizeCatalog, planFeatures } from '../lib/plans';
+import { DEFAULT_CATALOG, fmtLimit, isUnlimited, meterPct, normalizeCatalog, planFeatures, yearlySavingPct } from '../lib/plans';
+import { CREDIT_RULE_LINE, CREDIT_UNIT_LINE, DEFAULT_CREDIT_PACKS, creditBalance, creditsCover, fmtCredits, type CreditPack, type CreditsCatalog } from '../lib/types-credits';
+import { usePlan } from '../lib/store';
 import { cn } from '../lib/utils';
 
 export type Interval = 'month' | 'year';
 
-/** Public price catalog (GET /api/plans). Falls back to the bundled numbers so the landing never renders empty. */
-export function usePlansCatalog(): { catalog: PlansCatalog; loading: boolean } {
+/** Public price catalog (GET /api/plans), including the credit packs. Falls back to the bundled numbers so the landing never renders empty. */
+export function usePlansCatalog(): { catalog: CreditsCatalog; loading: boolean } {
   const q = useQuery({ queryKey: ['plans-catalog'], queryFn: async () => normalizeCatalog(await api.get<unknown>('/api/plans')), staleTime: 10 * 60_000, retry: 1 });
   return { catalog: q.data ?? DEFAULT_CATALOG, loading: q.isLoading };
 }
 
-export function IntervalToggle({ value, onChange, className }: { value: Interval; onChange: (v: Interval) => void; className?: string }) {
+const DEFAULT_SAVING = yearlySavingPct(DEFAULT_CATALOG.plans.find((p) => p.id === 'pro'));
+
+export function IntervalToggle({ value, onChange, className, catalog }: { value: Interval; onChange: (v: Interval) => void; className?: string; catalog?: PlansCatalog }) {
   const uid = useId(); // several toggles can be mounted at once (Billing page + modal) — keep their layout animations apart
+  const saving = yearlySavingPct(catalog?.plans.find((p) => p.id === 'pro')) ?? DEFAULT_SAVING;
   return (
     <div className={cn('inline-flex items-center gap-1 rounded-xl border border-line bg-surface p-1', className)} role="tablist" aria-label="Billing interval">
       {(['month', 'year'] as const).map((iv) => (
         <button key={iv} type="button" role="tab" aria-selected={value === iv} onClick={() => onChange(iv)} className={cn('relative px-3 py-1.5 text-[13px] rounded-lg transition-colors', value === iv ? 'text-ink' : 'text-muted hover:text-ink')}>
           {value === iv && <motion.span layoutId={`interval-pill-${uid}`} className="absolute inset-0 rounded-lg bg-surface-2 border border-line" transition={{ type: 'spring', stiffness: 500, damping: 40 }} />}
-          <span className="relative inline-flex items-center gap-1.5">{iv === 'month' ? 'Monthly' : 'Yearly'}{iv === 'year' && <span className="font-mono text-[9.5px] uppercase tracking-wider text-accent bg-accent-soft rounded px-1 py-0.5">2 months free</span>}</span>
+          <span className="relative inline-flex items-center gap-1.5">{iv === 'month' ? 'Monthly' : 'Yearly'}{iv === 'year' && !!saving && <span className="font-mono text-[9.5px] uppercase tracking-wider text-accent bg-accent-soft rounded px-1 py-0.5">save {saving}%</span>}</span>
         </button>
       ))}
     </div>
@@ -39,9 +44,10 @@ export function priceLabel(p: PlanCatalogEntry, iv: Interval): { amount: string;
  * The three cards (Trial · Pro · Studio). `onChoose(plan, interval)` decides what a click does:
  * landing → /signup, app → Paddle checkout. `current` marks the plan the tenant is on.
  */
-export function PricingCards({ catalog, interval, onChoose, current, busyPlan, compact, hideTrial, ctaLabel }: { catalog: PlansCatalog; interval: Interval; onChoose: (plan: PlanCatalogEntry, interval: Interval) => void; current?: PlanId | null; busyPlan?: PlanId | null; compact?: boolean; hideTrial?: boolean; ctaLabel?: (p: PlanCatalogEntry) => string }) {
+export function PricingCards({ catalog, interval, onChoose, current, busyPlan, compact, hideTrial, hideCreditNote, ctaLabel }: { catalog: PlansCatalog; interval: Interval; onChoose: (plan: PlanCatalogEntry, interval: Interval) => void; current?: PlanId | null; busyPlan?: PlanId | null; compact?: boolean; hideTrial?: boolean; hideCreditNote?: boolean; ctaLabel?: (p: PlanCatalogEntry) => string }) {
   const plans = hideTrial ? catalog.plans.filter((p) => p.id !== 'trial') : catalog.plans;
   return (
+    <>
     <div className={cn('grid gap-4', plans.length === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2')}>
       {plans.map((p, i) => {
         const price = priceLabel(p, interval);
@@ -73,7 +79,31 @@ export function PricingCards({ catalog, interval, onChoose, current, busyPlan, c
         );
       })}
     </div>
+    {!hideCreditNote && <CreditNote className={compact ? 'mt-3' : 'mt-4'} packs={(catalog as Partial<CreditsCatalog>).creditPacks} />}
+    </>
   );
+}
+
+/** One calm line that says what a credit is — under every set of pricing cards (landing, /pricing, Billing, modal). */
+export function CreditNote({ className, packs }: { className?: string; packs?: CreditPack[] }) {
+  const from = Math.min(...(packs?.length ? packs : DEFAULT_CREDIT_PACKS).map((p) => p.price).filter((n) => n > 0));
+  return (
+    <div className={cn('flex items-start gap-2 rounded-xl border border-line bg-surface-2/60 px-3 py-2 text-[12px] text-muted', className)}>
+      <Coins size={13} className="text-accent shrink-0 mt-[2px]" />
+      <span>Need more than your plan in a month? Top up with credits{Number.isFinite(from) ? ` from $${from}` : ''}. {CREDIT_UNIT_LINE} {CREDIT_RULE_LINE}</span>
+    </div>
+  );
+}
+
+/**
+ * "· 320 credits left" — the one line Ask and the Analysis plan show once the plan allowance for that
+ * metric is gone. Renders nothing off hosted, for the owner, or when the balance is zero.
+ */
+export function CreditsLeft({ metric, prefix = '· ', className }: { metric: 'analyze' | 'ask' | 'sends'; prefix?: string; className?: string }) {
+  const plan = usePlan();
+  const credits = creditBalance(plan);
+  if (!plan || plan.plan === 'owner' || credits <= 0) return null;
+  return <span className={cn('font-medium', className)} title={`Your ${fmtCredits(credits)} credits cover ${creditsCover(metric, credits)}. ${CREDIT_UNIT_LINE}`}>{prefix}{fmtCredits(credits)} credit{credits === 1 ? '' : 's'} left</span>;
 }
 
 /** Small progress meter used for quotas ("87 / 100 saves"). */

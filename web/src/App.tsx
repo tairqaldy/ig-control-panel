@@ -36,7 +36,7 @@ function Gate() {
   const auth = useAuth();
   const loc = useLocation();
   if (auth.loading) return <Loading />;
-  if (/^\/(privacy|terms|refunds)\/?$/.test(loc.pathname)) return <Suspense fallback={<Loading />}><Legal /></Suspense>;
+  if (/^\/(privacy(\/extension)?|security|terms|refunds)\/?$/.test(loc.pathname)) return <Suspense fallback={<Loading />}><Legal /></Suspense>;
   if (!auth.authenticated) {
     // Single-tenant: the login form everywhere (unchanged). Hosted: public marketing routes + login/signup.
     if (!auth.hosted) return <Login />;

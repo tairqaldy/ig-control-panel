@@ -8,6 +8,7 @@ import { config } from '../config.js';
 import { db, getMeta, GLOBAL, j, now, setMeta } from '../db.js';
 import type { PlanStatus, TenantRow } from '../types.js';
 import { getTenant, planForPriceId, updateTenant } from './plans.js';
+import { addCredits, packForPriceId } from './credits.js';
 
 export function paddleApiBase(): string {
   return config.paddle.env === 'production' ? 'https://api.paddle.com' : 'https://sandbox-api.paddle.com';
@@ -114,7 +115,41 @@ function firstPriceId(data: any): string | null {
     const id = it?.price?.id || it?.price_id;
     if (id && planForPriceId(id)) return id;
   }
-  return items[0]?.price?.id || items[0]?.price_id || null;
+  // A one-time credit pack must never be mistaken for the subscription's price.
+  for (const it of items) {
+    const id = it?.price?.id || it?.price_id;
+    if (id && !creditsForItem(it)) return id;
+  }
+  return null;
+}
+
+/**
+ * How many credits one transaction line is worth: either one of the three configured packs, or any Paddle price
+ * tagged `custom_data: { kind: 'credits', credits }` — which is what scripts/paddle-setup.mjs writes, so another pack
+ * can be sold later without a code change. 0 = not a credit line.
+ */
+function creditsForItem(it: any): number {
+  const id = it?.price?.id || it?.price_id;
+  if (!id) return 0;
+  const pack = packForPriceId(id);
+  if (pack) return pack.credits;
+  const cd = it?.price?.custom_data;
+  if (cd?.kind !== 'credits') return 0;
+  const n = Math.floor(Number(cd.credits) || 0);
+  return n > 0 ? n : 0;
+}
+
+/** Credit packs bought in this transaction, with quantities. */
+function creditItems(data: any): Array<{ priceId: string; credits: number; quantity: number }> {
+  const items: any[] = Array.isArray(data?.items) ? data.items : [];
+  const out: Array<{ priceId: string; credits: number; quantity: number }> = [];
+  for (const it of items) {
+    const credits = creditsForItem(it);
+    if (credits <= 0) continue;
+    const qty = Math.max(1, Math.floor(Number(it?.quantity) || 1));
+    out.push({ priceId: it?.price?.id || it?.price_id, credits: credits * qty, quantity: qty });
+  }
+  return out;
 }
 
 /** Apply one (verified) Paddle event to the tenants table. Returns a short description for logging. */
@@ -153,6 +188,19 @@ export async function handlePaddleEvent(evt: PaddleEvent): Promise<{ handled: bo
     if (started && (!tenant.plan_started_at || evt.event_type === 'subscription.created' || evt.event_type === 'subscription.activated')) patch.plan_started_at = started;
     if (!patch.plan_started_at && !tenant.plan_started_at && plan) patch.plan_started_at = t;
   } else if (evt.event_type === 'transaction.completed') {
+    // Credit packs are one-time purchases: add the credits, keyed on the Paddle transaction id so a redelivered
+    // webhook (a new event id for the same transaction) can never credit the account twice.
+    const packs = creditItems(data);
+    if (packs.length) {
+      const txnId = String(data.id || evt.event_id);
+      const total = packs.reduce((n, p) => n + p.credits, 0);
+      const r = addCredits(tenant.id, total, 'purchase', `paddle:${txnId}`);
+      if (data.customer_id) updateTenant(tenant.id, { paddle_customer_id: data.customer_id });
+      rememberEvent(evt.event_id);
+      const note = r.duplicate ? `transaction.completed → tenant ${tenant.id}: ${total} credits already added for ${txnId}` : `transaction.completed → tenant ${tenant.id}: +${total} credits (balance ${r.balance}, ${txnId})`;
+      console.log(`[paddle] ${note}`);
+      return { handled: true, note, tenantId: tenant.id };
+    }
     // A successful payment: (re)activate, extend the period, remember ids.
     if (data.customer_id) patch.paddle_customer_id = data.customer_id;
     if (data.subscription_id) patch.paddle_subscription_id = data.subscription_id;

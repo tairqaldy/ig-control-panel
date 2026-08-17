@@ -34,7 +34,7 @@
           This extension is not allowed to reach <span id="pair-origin-host"></span> yet.
           <div style="margin-top:6px"><button class="btn" id="btn-grant-origin">Allow access</button></div>
         </div>
-        <div class="hint">Connecting to <span id="app-host">resurfly.com</span> · <a href="#" id="link-change-url">change</a></div>
+        <div class="hint">Connecting to <span id="app-host">resurfly.com</span><span id="change-url-wrap"> · <a href="#" id="link-change-url">change</a></span></div>
       </div>
       <div class="hint" style="margin-top:10px">Nothing is read from Instagram until you pair. The code expires after 5 minutes.</div>
     </div>
@@ -48,6 +48,7 @@
           <div class="stat"><span class="k">New last time</span><span class="v" id="stat-new">—</span></div>
           <div class="stat"><span class="k">In your library</span><span class="v" id="stat-total">—</span></div>
         </div>
+        <div class="hint" id="new-since"></div>
         <div id="notice" class="notice hidden"></div>
         <div class="row" style="margin-top:12px">
           <button class="btn primary grow" id="btn-sync"><span id="sync-label">Sync now</span></button>

@@ -80,7 +80,7 @@ export function PublicFooter() {
         </div>
         <FooterCol title="Product" links={[['How it works', '/#tour'], ['Pricing', '/pricing'], ['Log in', '/login'], ['Start free trial', '/signup']]} />
         <FooterCol title="Docs" links={[['Documentation', DOCS_URL], ['Companion extension', COMPANION_DOC_URL], ['One-time script', HARVESTER_DOC_URL], ['FAQ', `${GITHUB_URL}/blob/main/docs/FAQ.md`]]} />
-        <FooterCol title="Legal" links={[['Privacy', '/privacy'], ['Terms', '/terms'], ['Refunds', '/refunds'], [`Support: ${SUPPORT_EMAIL}`, `mailto:${SUPPORT_EMAIL}`]]} />
+        <FooterCol title="Legal" links={[['Privacy', '/privacy'], ['Extension privacy', '/privacy/extension'], ['Security', '/security'], ['Terms', '/terms'], ['Refunds', '/refunds'], [`Support: ${SUPPORT_EMAIL}`, `mailto:${SUPPORT_EMAIL}`]]} />
       </div>
       <div className="mx-auto max-w-6xl px-4 sm:px-6 pb-8 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11.5px] text-muted">
         <span>© {new Date().getFullYear()} Resurfly</span>
@@ -124,8 +124,8 @@ export function PricingSection({ id = 'pricing', title, lead }: { id?: string; t
   const pro = catalog.plans.find((p) => p.id === 'pro');
   const choose = (p: PlanCatalogEntry, iv: Interval) => nav(p.id === 'trial' ? '/signup' : `/signup?plan=${p.id}&interval=${iv}`);
   return (
-    <Section id={id} eyebrow="Pricing" title={title ?? <>{NUM_WORDS[catalog.trialDays] ?? catalog.trialDays} days free, then <span className="text-accent">${pro?.monthly ?? 12}</span> a month.</>} lead={lead ?? `The trial analyzes your newest 100 saves and gives you 20 questions. No card. After ${catalog.trialDays} days the library stays readable and exportable; upgrade to keep analyzing.`}>
-      <div className="mb-5"><IntervalToggle value={interval} onChange={setInterval} /></div>
+    <Section id={id} eyebrow="Pricing" title={title ?? <>{NUM_WORDS[catalog.trialDays] ?? catalog.trialDays} days free, then <span className="text-accent">${pro?.monthly ?? 19}</span> a month.</>} lead={lead ?? `The trial analyzes your newest 100 saves and gives you 20 questions. No card. After ${catalog.trialDays} days the library stays readable and exportable; upgrade to keep analyzing.`}>
+      <div className="mb-5"><IntervalToggle value={interval} onChange={setInterval} catalog={catalog} /></div>
       <PricingCards catalog={catalog} interval={interval} onChoose={choose} />
       <div className="mt-4 text-[12px] text-muted">Prices in USD. Paddle is the merchant of record and adds VAT / sales tax where it applies. Cancel any time; access runs to the end of the paid period. Every plan can export everything as JSON, CSV, Markdown or an Obsidian vault.</div>
     </Section>

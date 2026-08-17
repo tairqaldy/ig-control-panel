@@ -9,12 +9,12 @@ import { addMessage, askStream, createConversation, defaultTitle, getConversatio
 import { ONBOARDING_META_KEYS } from '../migrations/006-ask-onboarding.js';
 import { markResurfaced, pickResurface, resurfaceNotes, todayKey } from '../services/resurface.js';
 import { lightItem } from './items.js';
-import { hasOpenAI } from '../services/openai.js';
+import { hasOpenAI, isQuotaError } from '../services/openai.js';
 import { CATEGORIES } from '../prompts/analysis.js';
 import { rebuildAllNeighbors } from '../services/neighbors.js';
 import { reindexAll } from '../services/search.js';
 import { budgetExhausted, getScope, recomputeSavedAtEst, resetBudget, scopeReport, scopeWhereSql, setScope, type Scope } from '../services/scope.js';
-import { bumpUsage, checkQuota, finite, limitsFor, quotaResponse } from '../services/plans.js';
+import { chargeMetered, checkQuota, finite, limitsFor, quotaResponse } from '../services/plans.js';
 
 export const misc = new Hono();
 
@@ -155,8 +155,10 @@ misc.post('/ask', async (c) => {
   let conversationId: number | null = body.conversationId ? Number(body.conversationId) : null;
   if (conversationId !== null && (!Number.isInteger(conversationId) || !getConversation(t, conversationId))) return c.json({ error: 'conversation not found' }, 404);
   const q = checkQuota(t, 'ask', 1);
-  if (!q.ok) return quotaResponse(c, q);
-  bumpUsage(t, 'ask', 1);
+  if (!q.ok) return quotaResponse(c, q, t);
+  // Allowance first; once it is gone the answer costs one credit (chargeMetered writes the ledger row).
+  const charge = chargeMetered(t, 'ask', 1, 'ask');
+  if (!charge.ok) return quotaResponse(c, checkQuota(t, 'ask', 1), t);
 
   const isNew = conversationId === null;
   if (conversationId === null) conversationId = createConversation(t, defaultTitle(question)).id;
@@ -208,10 +210,16 @@ misc.post('/ask', async (c) => {
         if (better && getConversation(t, convId)?.title === conv.title) { updateConversation(t, convId, { title: better }); title = better; }
       }
       const after = checkQuota(t, 'ask', 1);
-      await send('done', { ok: true, conversationId: convId, title, intent: plan.intent, messageId: msg?.id ?? null, quota: { used: after.used, limit: finite(after.limit), remaining: finite(after.remaining), resetsAt: after.resetsAt } });
+      await send('done', { ok: true, conversationId: convId, title, intent: plan.intent, messageId: msg?.id ?? null, quota: { used: after.used, limit: finite(after.limit), remaining: finite(after.remaining), resetsAt: after.resetsAt, credits: after.creditsAvailable, wouldUseCredits: after.wouldUseCredits } });
     } catch (e: any) {
       persistAssistant();
-      await send('error', { message: String(e?.message || e), conversationId: convId });
+      // A billing failure on OUR OpenAI account is not the customer's problem and must not show them our billing page.
+      // The real error still goes to the server log, where the operator sees it.
+      if (isQuotaError(e)) console.error('[ask] OpenAI quota/billing error:', e?.message || e);
+      const message = isQuotaError(e)
+        ? 'The assistant is briefly unavailable on our side. Nothing was charged to you — try again in a few minutes.'
+        : String(e?.message || e);
+      await send('error', { message, conversationId: convId });
     }
   });
 });

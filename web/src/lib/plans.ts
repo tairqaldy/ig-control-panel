@@ -1,5 +1,6 @@
 /* Plan / quota helpers shared by the Shell banner, Billing page, UpgradeModal, Landing pricing (HOSTED-SPEC §4, §7). */
 import type { Limit, Limits, PlanCatalogEntry, PlanId, PlansCatalog, QuotaError, UsageMeter } from './types';
+import { DEFAULT_CREDIT_PACKS, normalizeCreditPacks, type CreditsCatalog } from './types-credits';
 
 export const isUnlimited = (l: Limit | undefined): boolean => l === null || l === undefined || !Number.isFinite(l);
 export const fmtLimit = (l: Limit | undefined): string => (isUnlimited(l) ? '∞' : (l as number).toLocaleString());
@@ -23,17 +24,26 @@ export const PLAN_LIMITS: Record<PlanId, Limits> = {
   pro: { analyzeTotal: 2000, analyzePerMonth: 300, askPerMonth: 300, askPerMinute: 8, rules: 10, sendsPerMonth: 5000, harvestsPerDay: 20, graphNodes: 3000, concurrency: 2 },
   studio: { analyzeTotal: 10000, analyzePerMonth: 2000, askPerMonth: 1500, askPerMinute: 15, rules: null, sendsPerMonth: 25000, harvestsPerDay: 50, graphNodes: 6000, concurrency: 4 },
 };
-export const DEFAULT_CATALOG: PlansCatalog = {
+export const DEFAULT_CATALOG: CreditsCatalog = {
   trialDays: 3,
   plans: [
     { id: 'trial', name: 'Trial', blurb: 'Try the whole thing on your newest 100 saves.', monthly: 0, yearly: 0, priceIds: { month: null, year: null }, limits: PLAN_LIMITS.trial },
-    { id: 'pro', name: 'Pro', blurb: 'For one person with a real library.', monthly: 12, yearly: 99, priceIds: { month: null, year: null }, limits: PLAN_LIMITS.pro },
-    { id: 'studio', name: 'Studio', blurb: 'For creators who save a lot and run DM automations.', monthly: 34, yearly: 290, priceIds: { month: null, year: null }, limits: PLAN_LIMITS.studio },
+    { id: 'pro', name: 'Pro', blurb: 'For one person with a real library.', monthly: 19, yearly: 144, priceIds: { month: null, year: null }, limits: PLAN_LIMITS.pro },
+    { id: 'studio', name: 'Studio', blurb: 'For creators who save a lot and run DM automations.', monthly: 49, yearly: 348, priceIds: { month: null, year: null }, limits: PLAN_LIMITS.studio },
   ],
+  creditPacks: DEFAULT_CREDIT_PACKS,
 };
 
+/** How much the yearly price saves against 12 monthly payments, e.g. 37 for Pro ($144 vs $228). */
+export function yearlySavingPct(p: PlanCatalogEntry | undefined): number | null {
+  if (!p || !p.monthly || !p.yearly) return null;
+  const full = p.monthly * 12;
+  if (full <= 0 || p.yearly >= full) return null;
+  return Math.round((1 - p.yearly / full) * 100);
+}
+
 /** Accepts the catalog in a few plausible shapes (array or {plans}, price fields named a few ways) and fills gaps from DEFAULT_CATALOG. */
-export function normalizeCatalog(raw: unknown): PlansCatalog {
+export function normalizeCatalog(raw: unknown): CreditsCatalog {
   const src: any = raw && typeof raw === 'object' ? raw : {};
   const list: any[] = Array.isArray(src) ? src : Array.isArray(src.plans) ? src.plans : src.plans && typeof src.plans === 'object' ? Object.entries(src.plans).map(([id, v]: [string, any]) => ({ id, ...v })) : [];
   const num = (v: any): number | null => (v === null || v === undefined || v === '' ? null : Number.isFinite(Number(v)) ? Number(v) : null);
@@ -47,7 +57,7 @@ export function normalizeCatalog(raw: unknown): PlansCatalog {
     const py = p.priceIds?.year ?? p.priceIds?.yearly ?? p.paddle?.year ?? p.paddle?.yearly ?? p.priceIdYear ?? null;
     plans.push({ id: d.id, name: p.name || d.name, blurb: p.blurb || p.description || d.blurb || p.tagline, monthly: monthly ?? d.monthly, yearly: yearly ?? d.yearly, priceIds: { month: pm ? String(pm) : null, year: py ? String(py) : null }, limits: { ...d.limits, ...(p.limits || {}) } });
   }
-  return { trialDays: Number(src.trialDays ?? src.trial_days ?? DEFAULT_CATALOG.trialDays) || DEFAULT_CATALOG.trialDays, plans };
+  return { trialDays: Number(src.trialDays ?? src.trial_days ?? DEFAULT_CATALOG.trialDays) || DEFAULT_CATALOG.trialDays, plans, creditPacks: normalizeCreditPacks(src) };
 }
 
 /** Bullet list for a pricing card, from limits. */

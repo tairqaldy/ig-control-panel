@@ -19,6 +19,16 @@ const fmtAgo = (ms) => {
   return `${Math.round(h / 24)} d ago`;
 };
 
+/* The Chrome Web Store build declares no optional_host_permissions — it talks to resurfly.com only, so the
+   App URL field is hidden there. Unpacked / self-hosted builds keep it. */
+const SELF_HOSTABLE = (() => {
+  try {
+    const m = chrome.runtime.getManifest();
+    return Array.isArray(m.optional_host_permissions) && m.optional_host_permissions.length > 0;
+  } catch (e) { return false; }
+})();
+if (!SELF_HOSTABLE) $('card-app-url').classList.add('hidden');
+
 const welcome = new URLSearchParams(location.search).get('welcome') === '1';
 $('welcome').classList.toggle('hidden', !welcome);
 $('title').classList.toggle('hidden', welcome);
@@ -42,6 +52,7 @@ async function refresh() {
     $('pair-origin-host').textContent = host(s.appUrl);
     $('btn-pair').disabled = !s.originGranted;
   }
+  if (!SELF_HOSTABLE) return;
   if (document.activeElement !== $('app-url')) $('app-url').value = s.appUrl || DEFAULT_APP_URL;
   $('app-url').disabled = !!s.paired;
   $('btn-save-url').disabled = !!s.paired;
