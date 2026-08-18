@@ -90,3 +90,23 @@ The integrator flagged that `paywallGuard` is mounted from `mountPublicExtras`, 
 **Ruling: leave it. It is not reachable.** Both paths require a credential that can only be obtained from behind the wall. The Companion's device token comes from `POST /api/companion/pair-code`, which is a session route inside the guard, and the harvest-form token is minted by a session route too. A locked tenant is locked from the moment it is created — `requires_payment = 1` is written during signup itself — so it never has a window in which to mint either credential. And a tenant that already holds a device token is by definition one that was never locked (grandfathered) or has already paid.
 
 What would make this a real hole is a future change that locks an *existing* tenant — for example re-locking on a failed renewal. If that is ever added, these two routes must be moved behind the guard in the same commit. `server/src/services/paywall.test.ts` enumerates `app.routes` against an explicit allowlist, so a new pre-guard route will fail the suite rather than slip through, but a change in *when* a tenant becomes locked would not be caught by it.
+
+---
+
+## OPEN defect, found in post-deploy verification: the wizard never shows the pairing code
+
+**Impact.** A new person who picks "Install the Companion" on screen 1 of `/welcome` never gets a code to paste. The button sits on "Creating…". This is the primary path of the first onboarding screen — the exact flow round 7 exists to make finishable. **Workaround: `/import` works**, so anyone stuck can be sent there.
+
+**What is established, each verified against production rather than reasoned about:**
+
+- The server is fine. `POST /api/companion/pair-code` as a fresh trial account returns `200 {"code":"RSF-ABHY-QDYK","expiresAt":<ms>,"ttlSeconds":300}` immediately, by curl and in the browser (the network tab shows the 200).
+- `/import` renders the same `PairingCode` component and **works** for the same fresh trial account: still "Creating…" at 1.2 s, code on screen by 5.2 s. It also works for the owner — the `import-pairing` flow step has passed in every run.
+- The wizard does **not**: polled every 500 ms for 20 s after the click, no `RSF-` ever appears, no `<code>` element is in the DOM, no Copy button, and `RSF-` is absent from `innerHTML` as well as `innerText`. So the code branch never mounts.
+- It is not the expiry bug fixed in 51ee756: `expired` is now correctly false throughout, and no countdown renders either.
+- No console errors, no page errors, no failed requests.
+
+**What that leaves.** `pair.data` is never populated in the wizard's instance while the request plainly succeeded — so either that instance is unmounted before the mutation settles (a remount would reset it to idle, which matches "no code, no expiry, no countdown") or the settled state lands on an instance that is no longer the one rendering. `StepBringSaves` polls (`useJobs`, `useCompanionDevices`, `total`, `advancing`) so it re-renders continuously, and `PairingCode` sits inside an `<ol>` inside `WizardShell`; the list keys are stable (`key={t}`), so the remount, if that is what it is, comes from higher up.
+
+**How to finish it.** Run the wizard locally against a fresh tenant with React DevTools' "highlight updates" on, or drop a `useEffect(() => console.log('PairingCode mount'), [])` into the component — one reload of `/welcome` will say immediately whether it is mounting repeatedly. If it is, hoist the mutation state above the polling boundary (lift `usePairCode` into `StepBringSaves` and pass `code`/`onMint` down, or memoise the subtree) rather than trying to make the child survive.
+
+**Do not** fix this by auto-minting on mount. That was the round-6 behaviour and it was removed for a good reason: the code lives five minutes and this step sits behind "download the zip, unzip it, switch on Developer mode", so the code was routinely dead before it was pasted.
