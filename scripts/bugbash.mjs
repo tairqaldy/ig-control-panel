@@ -92,7 +92,12 @@ try {
   await sweep('public', PUBLIC, null);
   if (who === 'owner' || who === 'both') await sweep('owner', ROUTES, ownerLogin);
   if (who === 'trial' || who === 'both') { await sweep(lockedPersona ? 'locked' : 'trial', ROUTES, trialSignup); await trialCleanup(); }
-} finally { await browser.close(); }
+} finally {
+// On Windows, Chrome sometimes still holds its temp profile when puppeteer tries to delete it, and browser.close()
+// throws EBUSY. Because the report prints after this line, that race used to take a completed 44-step run down with
+// it — the work was done and the output was thrown away. Teardown failure is not a test result.
+  try { await browser.close(); } catch (e) { console.warn('(browser teardown: ' + String(e.message).slice(0, 80) + ')'); }
+}
 
 // report
 // A locked account that reaches anything other than /start has slipped past the paywall.

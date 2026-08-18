@@ -8,16 +8,25 @@ import { Skeleton } from '../ui';
 import { ChromeGlyph } from '../instagram/icons';
 import { COMPANION_INSTALL_URL, COMPANION_IS_STORE, useCompanionDevices, useDisableServerHarvest, usePairCode, useRevokeDevice } from './useCompanion';
 
+/**
+ * Seconds left, computed during render rather than held in state.
+ *
+ * The state version started at 0 and only filled itself in an effect, so on the render where a freshly minted code
+ * first arrived `left` was still 0 and `expired` was true for one frame. `AnimatePresence mode="wait"` then latched
+ * that frame — it will not mount the code block until the "expired" block has finished exiting — and a code the
+ * server had just issued with five minutes on it was presented as "The previous code expired", with the button
+ * offering to mint another. Verified on production: the server returned RSF-PJQB-ERW6 valid for 304s and the screen
+ * said it had expired. Deriving the value during render removes the stale-zero frame entirely; the interval now only
+ * forces a repaint.
+ */
 function useCountdown(expiresAt: number | null | undefined) {
-  const [left, setLeft] = useState(0);
+  const [, tick] = useState(0);
   useEffect(() => {
     if (!expiresAt) return;
-    const tick = () => setLeft(Math.max(0, expiresAt - Math.floor(Date.now() / 1000)));
-    tick();
-    const t = setInterval(tick, 1000);
+    const t = setInterval(() => tick((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, [expiresAt]);
-  return left;
+  return expiresAt ? Math.max(0, expiresAt - Math.floor(Date.now() / 1000)) : 0;
 }
 
 /**
